@@ -1,0 +1,80 @@
+# VoidDB Configuration File
+# All values can be overridden with VOID_* environment variables.
+
+server:
+  host: "0.0.0.0"
+  port: 7700
+  blob_port: 7701
+  read_timeout: "30s"
+  write_timeout: "60s"
+  max_body_size: 67108864   # 64 MB
+  cors_origins:
+    - "*"
+
+engine:
+  data_dir: "./data"
+  # memtable_size: max in-memory write buffer before flush (bytes)
+  memtable_size: 67108864   # 64 MB
+  # block_cache_size: LRU block cache budget (bytes)
+  block_cache_size: 268435456  # 256 MB
+  # bloom_false_positive_rate: probability of a false-positive in bloom filters
+  bloom_false_positive_rate: 0.01
+  compaction_workers: 2
+  sync_wal: false           # set true for highest durability (slower writes)
+  max_levels: 7
+  level_size_multiplier: 10
+
+auth:
+  # ⚠ Change this in production! Use at least 32 random characters.
+  jwt_secret: "change-me-in-production-please-use-random-string"
+  token_expiry: "24h"
+  refresh_expiry: "168h"    # 7 days
+  admin_password: "admin"   # ⚠ Change this!
+  rate_limit_rps: 1000
+
+blob:
+  storage_dir: "./blob"
+  max_object_size: 5368709120  # 5 GB
+  enable_s3_api: true
+  s3_region: "void-1"
+
+log:
+  level: "info"       # debug | info | warn | error
+  format: "console"   # console | json
+  output_path: "stdout"
+
+admin:
+  enabled: true
+  static_dir: "./admin/out"
+
+# ── TLS / SSL / Let's Encrypt ──────────────────────────────────────────────
+# mode: off    – plain HTTP (default for local dev)
+# mode: file   – load cert + key PEM files from disk (incl. wildcard certs)
+# mode: acme   – automatic Let's Encrypt via HTTP-01 challenge
+tls:
+  mode: "off"
+
+  # File mode: paths to your certificate and private key.
+  # Supports wildcard certs provisioned externally (e.g. via Certbot DNS-01).
+  # cert_file: "/etc/ssl/certs/void.crt"
+  # key_file:  "/etc/ssl/private/void.key"
+
+  # ACME (Let's Encrypt) mode settings.
+  # domain: "void.example.com"
+  # extra_domains: []
+  # acme_email: "admin@example.com"
+  # acme_cache_dir: "./data/acme-cache"
+
+  # Redirect plain HTTP → HTTPS (recommended in production).
+  redirect_http: false
+  http_src_port: 80    # plain-HTTP port for challenges / redirects
+  https_port: 443      # HTTPS listen port
+
+# ── Backup ─────────────────────────────────────────────────────────────────
+backup:
+  dir: "./backups"
+  # Number of backup archives to keep (oldest deleted, 0 = keep all).
+  retain: 14
+  # Cron expression for automatic scheduled backups (empty = disabled).
+  # Example: "0 2 * * *" runs daily at 02:00 UTC.
+  # schedule_cron: "0 2 * * *"

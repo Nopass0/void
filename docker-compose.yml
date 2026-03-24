@@ -1,0 +1,94 @@
+version: "3.9"
+
+# ── VoidDB + PostgreSQL deployment ────────────────────────────────────────────
+# Usage:
+#   docker-compose up -d              # start all services
+#   docker-compose up -d voiddb       # start only VoidDB
+#   docker-compose logs -f voiddb     # follow VoidDB logs
+#
+# Default endpoints:
+#   VoidDB API:   http://localhost:7700
+#   VoidDB Blob:  http://localhost:7701
+#   Admin UI:     http://localhost:3000
+#   PostgreSQL:   localhost:5432
+
+services:
+  # ── VoidDB ──────────────────────────────────────────────────────────────────
+  voiddb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voiddb
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+      - "7701:7701"
+    environment:
+      VOID_HOST: "0.0.0.0"
+      VOID_PORT: "7700"
+      VOID_DATA_DIR: "/data/db"
+      VOID_BLOB_DIR: "/data/blob"
+      VOID_JWT_SECRET: "${VOID_JWT_SECRET:-change-me-in-production}"
+      VOID_ADMIN_PASSWORD: "${VOID_ADMIN_PASSWORD:-admin}"
+      VOID_LOG_LEVEL: "${VOID_LOG_LEVEL:-info}"
+    volumes:
+      - voiddb_data:/data/db
+      - voiddb_blob:/data/blob
+      - ./config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - void_net
+
+  # ── Admin Panel ──────────────────────────────────────────────────────────────
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    container_name: voiddb_admin
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:7700"
+      NODE_ENV: production
+    depends_on:
+      voiddb:
+        condition: service_healthy
+    networks:
+      - void_net
+
+  # ── PostgreSQL (for benchmarks and comparison) ─────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: voiddb_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bench
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - void_net
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  voiddb_data:
+  voiddb_blob:
+  pg_data:
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  void_net:
+    driver: bridge

@@ -1,0 +1,43 @@
+# Binaries
+voiddb
+voiddb.exe
+dist/
+
+# Data directories (never commit actual data)
+data/
+blob/
+backups/
+logs/
+*.void
+
+# ACME certificate cache
+data/acme-cache/
+
+# Go
+*.test
+vendor/
+go.sum
+
+# Node / Next.js
+node_modules/
+.next/
+admin/out/
+admin/.next/
+orm/typescript/dist/
+orm/typescript/node_modules/
+
+# Environment
+.env
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Temp token files
+.void_token
