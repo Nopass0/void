@@ -5,19 +5,17 @@
 "use client";
 
 import React, { useEffect, useCallback, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  FolderOpen, Upload, Trash2, Download, RefreshCw, Plus, File, Loader2
+  FolderOpen, Upload, Trash2, Download, RefreshCw, Plus, File, Loader2, Copy, Link
 } from "lucide-react";
 import { toast } from "sonner";
+import { ContextMenu, type ContextMenuEntry } from "@/components/ui/context-menu";
 import { useStore } from "@/store";
-import { GlassCard } from "@/components/ui/glass-card";
+import { Card } from "@/components/ui/glass-card";
 import { formatBytes } from "@/lib/utils";
 import * as api from "@/lib/api";
 
-/**
- * BlobPanel provides a file-browser UI for blob buckets and objects.
- */
 export function BlobPanel() {
   const {
     buckets, setBuckets,
@@ -60,6 +58,9 @@ export function BlobPanel() {
         toast.error(`Failed to upload ${file.name}`);
       }
     }
+    if (fileRef.current) {
+      fileRef.current.value = "";
+    }
     loadObjects(activeBucket);
   };
 
@@ -77,9 +78,9 @@ export function BlobPanel() {
   return (
     <div className="flex gap-4 h-full">
       {/* Bucket list */}
-      <GlassCard className="w-48 shrink-0 p-3 flex flex-col gap-2">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+      <Card className="w-48 shrink-0 p-3 flex flex-col gap-1">
+        <div className="flex items-center justify-between mb-1.5 px-1">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
             Buckets
           </span>
           <button
@@ -87,64 +88,59 @@ export function BlobPanel() {
               const name = prompt("Bucket name:");
               if (!name) return;
               try {
-                await fetch(`${process.env.NEXT_PUBLIC_API_URL}/s3/${name}`, {
-                  method: "PUT",
-                  headers: { Authorization: `Bearer ${localStorage.getItem("void_access_token")}` },
-                });
+                await api.createBucket(name);
                 toast.success(`Bucket "${name}" created`);
                 loadBuckets();
               } catch {
                 toast.error("Failed to create bucket");
               }
             }}
-            className="text-muted-foreground hover:text-void-400 transition-colors"
+            className="text-muted-foreground hover:text-neon-500 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
         </div>
         {buckets.map((b) => (
-          <motion.button
+          <button
             key={b}
-            whileTap={{ scale: 0.97 }}
             onClick={() => setActiveBucket(b)}
-            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-all text-left ${
+            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-all text-left ${
               activeBucket === b
-                ? "bg-void-600/30 text-void-300 border border-void-500/30"
-                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                ? "bg-surface-4 text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-surface-3"
             }`}
           >
             <FolderOpen className="w-3.5 h-3.5 shrink-0" />
             <span className="truncate">{b}</span>
-          </motion.button>
+          </button>
         ))}
-      </GlassCard>
+      </Card>
 
       {/* Object browser */}
       <div className="flex-1 flex flex-col gap-3">
         {/* Toolbar */}
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold flex-1">
+          <h2 className="text-sm font-medium flex-1">
             {activeBucket ? (
-              <span className="text-void-300">{activeBucket}</span>
+              <span className="text-neon-500">{activeBucket}</span>
             ) : (
               <span className="text-muted-foreground">Select a bucket</span>
             )}
           </h2>
           <button
             onClick={() => activeBucket && loadObjects(activeBucket)}
-            className="text-muted-foreground hover:text-void-400 transition-colors"
+            className="btn-ghost"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className="w-3.5 h-3.5" />
           </button>
-          <motion.button
-            whileTap={{ scale: 0.96 }}
+          <button
             onClick={() => fileRef.current?.click()}
             disabled={!activeBucket}
-            className="flex items-center gap-1.5 text-sm bg-void-600/40 hover:bg-void-600/60 text-void-200 px-3 py-2 rounded-lg border border-void-500/30 transition-colors disabled:opacity-40"
+            className="btn-primary text-sm disabled:opacity-40"
           >
             <Upload className="w-4 h-4" />
             Upload
-          </motion.button>
+          </button>
           <input
             ref={fileRef}
             type="file"
@@ -155,73 +151,83 @@ export function BlobPanel() {
         </div>
 
         {/* Objects table */}
-        <GlassCard className="flex-1 p-0 overflow-hidden">
+        <div className="flex-1 rounded-lg border border-border bg-surface-2 overflow-hidden">
           {blobLoading ? (
             <div className="flex items-center justify-center h-40">
-              <Loader2 className="w-6 h-6 animate-spin text-void-400" />
+              <Loader2 className="w-5 h-5 animate-spin text-neon-500" />
             </div>
           ) : !activeBucket ? (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
-              <FolderOpen className="w-10 h-10 opacity-20" />
+              <FolderOpen className="w-8 h-8 opacity-20" />
               <p className="text-sm">Select a bucket</p>
             </div>
           ) : objects.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
-              <File className="w-10 h-10 opacity-20" />
+              <File className="w-8 h-8 opacity-20" />
               <p className="text-sm">No objects in this bucket</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="data-table">
               <thead>
-                <tr className="border-b border-void-500/20">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Key</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Size</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Modified</th>
-                  <th className="px-4 py-3 w-20" />
+                <tr>
+                  <th>Key</th>
+                  <th>Size</th>
+                  <th>Type</th>
+                  <th>Modified</th>
+                  <th className="w-20" />
                 </tr>
               </thead>
               <tbody>
                 <AnimatePresence>
-                  {objects.map((obj, i) => (
-                    <motion.tr
-                      key={obj.key}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ delay: i * 0.03 }}
-                      className="border-b border-void-500/10 hover:bg-void-600/10 transition-colors group"
-                    >
-                      <td className="px-4 py-2.5 font-mono text-xs text-void-300">{obj.key}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{formatBytes(obj.size)}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{obj.content_type}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                        {new Date(obj.last_modified).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <a
-                            href={api.getObjectUrl(obj.bucket, obj.key)}
-                            download={obj.key}
-                            className="text-muted-foreground hover:text-void-400 transition-colors"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </a>
-                          <button
-                            onClick={() => handleDelete(obj.key)}
-                            className="text-muted-foreground hover:text-red-400 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  ))}
+                  {objects.map((obj, i) => {
+                    const objMenu: ContextMenuEntry[] = [
+                      { label: "Download", icon: <Download className="w-3.5 h-3.5" />, onClick: () => { window.open(api.getObjectUrl(obj.bucket, obj.key), "_blank"); } },
+                      { label: "Copy URL", icon: <Link className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(api.getObjectUrl(obj.bucket, obj.key)); toast.success("URL copied"); } },
+                      { label: "Copy key", icon: <Copy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(obj.key); toast.success("Key copied"); } },
+                      { separator: true },
+                      { label: "Delete", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleDelete(obj.key) },
+                    ];
+                    return (
+                    <ContextMenu key={obj.key} items={objMenu} as="tr">
+                      <motion.tr
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ delay: i * 0.02 }}
+                        className="group"
+                      >
+                        <td className="font-mono text-xs text-neon-400">{obj.key}</td>
+                        <td className="text-xs text-muted-foreground">{formatBytes(obj.size)}</td>
+                        <td className="text-xs text-muted-foreground">{obj.content_type}</td>
+                        <td className="text-xs text-muted-foreground">
+                          {new Date(obj.last_modified).toLocaleString()}
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <a
+                              href={api.getObjectUrl(obj.bucket, obj.key)}
+                              download={obj.key}
+                              className="text-muted-foreground hover:text-neon-500 transition-colors"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </a>
+                            <button
+                              onClick={() => handleDelete(obj.key)}
+                              className="text-muted-foreground hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    </ContextMenu>
+                    );
+                  })}
                 </AnimatePresence>
               </tbody>
             </table>
           )}
-        </GlassCard>
+        </div>
       </div>
     </div>
   );

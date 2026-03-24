@@ -1,21 +1,16 @@
 /**
- * @fileoverview Top header bar with breadcrumbs, sidebar toggle and stats pill.
+ * @fileoverview Header – top bar with breadcrumbs and sidebar toggle.
  */
 
 "use client";
 
 import React from "react";
 import { motion } from "framer-motion";
-import { Menu, Activity, RefreshCw } from "lucide-react";
+import { Menu, RefreshCw } from "lucide-react";
 import { useStore } from "@/store";
 import { formatBytes, formatNumber } from "@/lib/utils";
 import * as api from "@/lib/api";
 
-/**
- * Header renders the top navigation bar.
- * It shows the current db/collection breadcrumb, a sidebar toggle button,
- * and a real-time engine stats pill.
- */
 export function Header() {
   const { sidebarOpen, setSidebarOpen, activeDb, activeCol, stats, setStats } =
     useStore();
@@ -31,7 +26,6 @@ export function Header() {
     }
   };
 
-  // Poll stats every 5 s.
   React.useEffect(() => {
     refresh();
     const id = setInterval(refresh, 5000);
@@ -41,13 +35,13 @@ export function Header() {
   const breadcrumb = [activeDb, activeCol].filter(Boolean).join(" / ");
 
   return (
-    <header className="glass-dark h-14 flex items-center px-4 gap-4 border-b border-void-500/20 shrink-0 z-10">
+    <header className="h-12 flex items-center px-4 gap-4 border-b border-border bg-surface-1 shrink-0 z-10">
       {/* Sidebar toggle */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="text-muted-foreground hover:text-foreground transition-colors"
+        className="btn-ghost p-1.5"
       >
-        <Menu className="w-5 h-5" />
+        <Menu className="w-4 h-4" />
       </button>
 
       {/* Breadcrumb */}
@@ -55,41 +49,41 @@ export function Header() {
         {breadcrumb ? (
           <motion.p
             key={breadcrumb}
-            initial={{ opacity: 0, x: -8 }}
+            initial={{ opacity: 0, x: -4 }}
             animate={{ opacity: 1, x: 0 }}
-            className="text-sm font-mono text-void-300 truncate"
+            className="text-sm font-mono text-muted-foreground truncate"
           >
             {breadcrumb}
           </motion.p>
         ) : (
-          <p className="text-sm text-muted-foreground">VoidDB Admin</p>
+          <p className="text-sm text-muted-foreground">VoidDB Console</p>
         )}
       </div>
 
-      {/* Stats pill */}
+      {/* Stats pills */}
       {stats && (
-        <div className="hidden md:flex items-center gap-3 text-xs font-mono">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass border border-void-500/20">
-            <Activity className="w-3 h-3 text-void-400 animate-pulse-slow" />
-            <span className="text-muted-foreground">mem</span>
-            <span className="text-void-300">{formatBytes(stats.memtable_size)}</span>
-            <span className="text-muted-foreground mx-1">•</span>
-            <span className="text-muted-foreground">segs</span>
-            <span className="text-void-300">{formatNumber(stats.segments)}</span>
-            <span className="text-muted-foreground mx-1">•</span>
-            <span className="text-muted-foreground">cache</span>
-            <span className="text-void-300">{formatBytes(stats.cache_used)}</span>
-          </div>
+        <div className="hidden md:flex items-center gap-4 text-xs font-mono text-muted-foreground">
+          <span>
+            mem <span className="text-foreground">{formatBytes(stats.memtable_size)}</span>
+          </span>
+          <span className="text-border">|</span>
+          <span>
+            segs <span className="text-foreground">{formatNumber(stats.segments)}</span>
+          </span>
+          <span className="text-border">|</span>
+          <span>
+            cache <span className="text-foreground">{formatBytes(stats.cache_used)}</span>
+          </span>
         </div>
       )}
 
       {/* Refresh */}
       <button
         onClick={refresh}
-        className="text-muted-foreground hover:text-void-400 transition-colors"
+        className="btn-ghost p-1.5"
         title="Refresh stats"
       >
-        <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+        <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
       </button>
     </header>
   );

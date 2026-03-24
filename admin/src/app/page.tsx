@@ -17,6 +17,10 @@ import { DataPanel } from "@/components/panels/DataPanel";
 import { BlobPanel } from "@/components/panels/BlobPanel";
 import { UsersPanel } from "@/components/panels/UsersPanel";
 import { SettingsPanel } from "@/components/panels/SettingsPanel";
+import { DocsPanel } from "@/components/panels/DocsPanel";
+import { QueryPanel } from "@/components/panels/QueryPanel";
+import { LogsPanel } from "@/components/panels/LogsPanel";
+import { GlobalContextSuppressor } from "@/components/ui/context-menu";
 import * as api from "@/lib/api";
 
 export default function Home() {
@@ -41,7 +45,7 @@ export default function Home() {
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-void-400" />
+        <Loader2 className="w-8 h-8 animate-spin text-neon-500" />
       </div>
     );
   }
@@ -50,12 +54,13 @@ export default function Home() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <GlobalContextSuppressor />
       <Sidebar />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
 
-        <main className="flex-1 overflow-auto p-4">
+        <main className="flex-1 overflow-auto p-6">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -70,6 +75,9 @@ export default function Home() {
               {activeTab === "blob" && <BlobPanel />}
               {activeTab === "users" && <UsersPanel />}
               {activeTab === "settings" && <SettingsPanel />}
+              {activeTab === "docs" && <DocsPanel />}
+              {activeTab === "query" && <QueryPanel />}
+              {activeTab === "logs" && <LogsPanel />}
             </motion.div>
           </AnimatePresence>
         </main>

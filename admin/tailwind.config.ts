@@ -43,17 +43,25 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
-        void: {
-          50: "#f0f0ff",
-          100: "#e0e0ff",
-          200: "#c8c8ff",
-          300: "#a8a8ff",
-          400: "#8080ff",
-          500: "#6060ff",
-          600: "#4040dd",
-          700: "#2020bb",
-          800: "#101099",
-          900: "#050577",
+        neon: {
+          50: "#e6fff5",
+          100: "#b3ffe0",
+          200: "#80ffcc",
+          300: "#4dffb8",
+          400: "#1affa3",
+          500: "#00E599",
+          600: "#00CC88",
+          700: "#00B377",
+          800: "#009966",
+          900: "#008055",
+        },
+        surface: {
+          0: "#060609",
+          1: "#09090D",
+          2: "#0E0E14",
+          3: "#14141D",
+          4: "#1A1A25",
+          5: "#20202D",
         },
       },
       borderRadius: {
@@ -62,50 +70,28 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       keyframes: {
-        "accordion-down": {
-          from: { height: "0" },
-          to: { height: "var(--radix-accordion-content-height)" },
-        },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: "0" },
-        },
         "fade-in": {
-          from: { opacity: "0", transform: "translateY(8px)" },
+          from: { opacity: "0", transform: "translateY(4px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
-        "glass-shimmer": {
+        "slide-in": {
+          from: { opacity: "0", transform: "translateX(-8px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
+        shimmer: {
           "0%": { backgroundPosition: "-200% 0" },
           "100%": { backgroundPosition: "200% 0" },
         },
-        pulse: {
-          "0%, 100%": { opacity: "1" },
-          "50%": { opacity: "0.5" },
-        },
       },
       animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
-        "fade-in": "fade-in 0.3s ease-out",
-        "glass-shimmer": "glass-shimmer 2s linear infinite",
-        "pulse-slow": "pulse 3s ease-in-out infinite",
-      },
-      backgroundImage: {
-        "glass-gradient":
-          "linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)",
-        "void-gradient":
-          "linear-gradient(135deg, #0f0f1a 0%, #1a0a2e 50%, #0a0a1f 100%)",
-        "neon-glow":
-          "radial-gradient(ellipse at center, rgba(96,96,255,0.3) 0%, transparent 70%)",
-      },
-      backdropBlur: {
-        xs: "2px",
+        "fade-in": "fade-in 0.2s ease-out",
+        "slide-in": "slide-in 0.2s ease-out",
+        shimmer: "shimmer 2s linear infinite",
       },
       boxShadow: {
-        glass: "0 8px 32px 0 rgba(31,38,135,0.37)",
-        "glass-sm": "0 4px 16px 0 rgba(31,38,135,0.2)",
-        neon: "0 0 20px rgba(96,96,255,0.5), 0 0 40px rgba(96,96,255,0.2)",
-        "neon-sm": "0 0 10px rgba(96,96,255,0.4)",
+        "card": "0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)",
+        "card-hover": "0 4px 12px rgba(0,0,0,0.4)",
+        "modal": "0 16px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)",
       },
     },
   },

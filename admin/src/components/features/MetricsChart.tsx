@@ -19,7 +19,6 @@ import {
 import { useStore } from "@/store";
 import { formatBytes } from "@/lib/utils";
 
-/** Custom tooltip styled to match the glassmorphism theme. */
 const CustomTooltip = ({
   active,
   payload,
@@ -29,22 +28,18 @@ const CustomTooltip = ({
 }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="glass rounded-lg p-2 border border-void-500/20 text-xs space-y-1">
+    <div className="bg-surface-3 rounded-md p-2 border border-border text-xs space-y-1">
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2">
           <span style={{ color: p.color }}>■</span>
           <span className="text-muted-foreground">{p.name}:</span>
-          <span className="font-mono">{formatBytes(p.value)}</span>
+          <span className="font-mono text-foreground">{formatBytes(p.value)}</span>
         </div>
       ))}
     </div>
   );
 };
 
-/**
- * MetricsChart renders live AreaCharts for memtable size and cache usage.
- * Data comes from the statsHistory slice in the Zustand store.
- */
 export function MetricsChart() {
   const { statsHistory } = useStore();
 
@@ -67,31 +62,31 @@ export function MetricsChart() {
       <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="memGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#6060ff" stopOpacity={0.4} />
-            <stop offset="95%" stopColor="#6060ff" stopOpacity={0} />
+            <stop offset="5%" stopColor="#00E599" stopOpacity={0.3} />
+            <stop offset="95%" stopColor="#00E599" stopOpacity={0} />
           </linearGradient>
           <linearGradient id="cacheGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#c060ff" stopOpacity={0.4} />
-            <stop offset="95%" stopColor="#c060ff" stopOpacity={0} />
+            <stop offset="5%" stopColor="#00C4FF" stopOpacity={0.3} />
+            <stop offset="95%" stopColor="#00C4FF" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 5% 14%)" />
         <XAxis dataKey="t" hide />
         <YAxis
           tickFormatter={(v: number) => formatBytes(v, 0)}
-          tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }}
+          tick={{ fontSize: 10, fill: "hsl(240 4% 46%)" }}
           width={56}
         />
         <Tooltip content={<CustomTooltip />} />
         <Legend
           iconSize={8}
-          wrapperStyle={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}
+          wrapperStyle={{ fontSize: 11, color: "hsl(240 4% 46%)" }}
         />
         <Area
           type="monotone"
           dataKey="memtable"
           name="Memtable"
-          stroke="#6060ff"
+          stroke="#00E599"
           strokeWidth={1.5}
           fill="url(#memGrad)"
           dot={false}
@@ -101,7 +96,7 @@ export function MetricsChart() {
           type="monotone"
           dataKey="cache"
           name="Cache"
-          stroke="#c060ff"
+          stroke="#00C4FF"
           strokeWidth={1.5}
           fill="url(#cacheGrad)"
           dot={false}

@@ -29,6 +29,33 @@ REST API (Gorilla Mux + JWT Auth)
         └── Files on disk with JSON metadata sidecar
 ```
 
+## Quick Deploy (Linux Server)
+
+Deploy VoidDB to a production server with **one command**. Generates random admin credentials, sets up a systemd service, and optionally configures HTTPS via Caddy.
+
+```bash
+# Basic deploy (HTTP, port 7700)
+curl -sSL https://raw.githubusercontent.com/voiddb/void/main/scripts/deploy.sh | sudo bash
+
+# With domain + auto-HTTPS
+curl -sSL https://raw.githubusercontent.com/voiddb/void/main/scripts/deploy.sh | sudo bash -s -- \
+  --domain db.example.com
+```
+
+After the script finishes it prints:
+
+```
+╔════════════════════════════════════════╗
+║    VoidDB Deployed Successfully!       ║
+╠════════════════════════════════════════╣
+║  URL:    https://db.example.com        ║
+║  Login:  clever-frog-rapid-moon        ║
+║  Pass:   bright-star-wild-ocean        ║
+╚════════════════════════════════════════╝
+```
+
+---
+
 ## Quick Start
 
 ### Docker Compose (recommended)

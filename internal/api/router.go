@@ -10,6 +10,7 @@ import (
 	"github.com/voiddb/void/internal/auth"
 	"github.com/voiddb/void/internal/blob"
 	"github.com/voiddb/void/internal/engine"
+	"github.com/voiddb/void/internal/kvcache"
 )
 
 // RouterOptions configures the router.
@@ -25,12 +26,17 @@ func NewRouter(
 	store *engine.Store,
 	authSvc *auth.Service,
 	blobStore *blob.Store,
+	cache *kvcache.Cache,
 	opts RouterOptions,
 ) http.Handler {
 	r := mux.NewRouter()
 
+	// Let CORS middleware answer browser preflight requests for any path.
+	r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}).Methods(http.MethodOptions)
+
 	// Global middleware.
 	r.Use(middleware.CORS(opts.CORSOrigins))
+	r.Use(middleware.RequestLogger)
 	r.Use(middleware.JSON)
 
 	// Instantiate handlers.
@@ -38,6 +44,8 @@ func NewRouter(
 	dbH     := handlers.NewDBHandler(store)
 	blobH   := handlers.NewBlobHandler(blobStore, opts.S3Region)
 	backupH := handlers.NewBackupHandler(store, "1.0.0")
+	cacheH  := handlers.NewCacheHandler(cache)
+	logsH   := handlers.NewLogsHandler()
 
 	// --- Public auth routes --------------------------------------------------
 	pub := r.PathPrefix("/v1/auth").Subrouter()
@@ -59,8 +67,10 @@ func NewRouter(
 	adminOnly.HandleFunc("/{id}", authH.DeleteUser).Methods(http.MethodDelete)
 	adminOnly.HandleFunc("/{id}/password", authH.ChangePassword).Methods(http.MethodPut)
 
-	// Engine stats.
+	// Engine stats and logs.
 	api.HandleFunc("/stats", dbH.Stats).Methods(http.MethodGet)
+	api.HandleFunc("/logs", logsH.Get).Methods(http.MethodGet)
+	api.HandleFunc("/logs/realtime", logsH.Realtime).Methods(http.MethodGet)
 
 	// Backup / restore (admin only).
 	backupAdmin := api.PathPrefix("/backup").Subrouter()
@@ -71,10 +81,15 @@ func NewRouter(
 	// Database management.
 	api.HandleFunc("/databases", dbH.ListDatabases).Methods(http.MethodGet)
 	api.HandleFunc("/databases", dbH.CreateDatabase).Methods(http.MethodPost)
-
+	api.HandleFunc("/databases/{db}/realtime", dbH.Realtime).Methods(http.MethodGet)
+	
 	// Collection management.
 	api.HandleFunc("/databases/{db}/collections", dbH.ListCollections).Methods(http.MethodGet)
 	api.HandleFunc("/databases/{db}/collections", dbH.CreateCollection).Methods(http.MethodPost)
+	
+	// Schema management.
+	api.HandleFunc("/databases/{db}/{col}/schema", dbH.GetSchema).Methods(http.MethodGet)
+	api.HandleFunc("/databases/{db}/{col}/schema", dbH.SetSchema).Methods(http.MethodPut)
 
 	// Document CRUD.
 	api.HandleFunc("/databases/{db}/{col}/query", dbH.QueryDocuments).Methods(http.MethodPost)
@@ -84,6 +99,11 @@ func NewRouter(
 	api.HandleFunc("/databases/{db}/{col}/{id}", dbH.ReplaceDocument).Methods(http.MethodPut)
 	api.HandleFunc("/databases/{db}/{col}/{id}", dbH.PatchDocument).Methods(http.MethodPatch)
 	api.HandleFunc("/databases/{db}/{col}/{id}", dbH.DeleteDocument).Methods(http.MethodDelete)
+
+	// Cache API.
+	api.HandleFunc("/cache/{key:.*}", cacheH.Get).Methods(http.MethodGet)
+	api.HandleFunc("/cache/{key:.*}", cacheH.Set).Methods(http.MethodPost)
+	api.HandleFunc("/cache/{key:.*}", cacheH.Delete).Methods(http.MethodDelete)
 
 	// --- S3-compatible blob API (separate path prefix) -----------------------
 	s3 := r.PathPrefix("/s3").Subrouter()

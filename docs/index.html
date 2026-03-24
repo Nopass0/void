@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoidDB — High-Performance Document Database</title>
+<style>
+  :root {
+    --bg: #0d0d1a; --bg2: #13132b; --bg3: #1a1a35;
+    --border: rgba(99,102,241,.25); --accent: #6366f1;
+    --accent2: #818cf8; --text: #e2e8f0; --muted: #94a3b8;
+    --green: #34d399; --yellow: #fbbf24; --red: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Nav */
+  nav { background: rgba(13,13,26,.95); backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100;
+        padding: .75rem 2rem; display: flex; align-items: center; gap: 2rem; }
+  nav .logo { font-size: 1.2rem; font-weight: 700; color: var(--accent2);
+               background: linear-gradient(135deg,#6366f1,#a855f7); -webkit-background-clip: text;
+               -webkit-text-fill-color: transparent; }
+  nav ul { display: flex; gap: 1.5rem; list-style: none; }
+  nav ul a { color: var(--muted); font-size: .9rem; }
+  nav ul a:hover { color: var(--text); }
+
+  /* Layout */
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+
+  /* Hero */
+  .hero { text-align: center; padding: 5rem 2rem 3rem;
+          background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99,102,241,.3), transparent); }
+  .hero h1 { font-size: 3.5rem; font-weight: 800; line-height: 1.1; margin-bottom: 1rem;
+              background: linear-gradient(135deg, #e2e8f0, #818cf8, #a855f7);
+              -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p { font-size: 1.2rem; color: var(--muted); max-width: 600px; margin: 0 auto 2rem; }
+  .hero-btns { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+  .btn { padding: .7rem 1.8rem; border-radius: .5rem; font-weight: 600; font-size: .95rem; cursor: pointer; border: none; transition: all .2s; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent2); text-decoration: none; }
+  .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); text-decoration: none; }
+
+  /* Stats bar */
+  .stats-bar { display: flex; gap: 2rem; justify-content: center; flex-wrap: wrap;
+               padding: 2rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+               background: var(--bg2); }
+  .stat { text-align: center; }
+  .stat-num { font-size: 2rem; font-weight: 800; color: var(--accent2); }
+  .stat-label { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+
+  /* Sections */
+  section { padding: 4rem 0; }
+  h2 { font-size: 2rem; font-weight: 700; margin-bottom: 1rem;
+       background: linear-gradient(90deg, var(--text), var(--accent2));
+       -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  h3 { font-size: 1.2rem; font-weight: 600; color: var(--accent2); margin-bottom: .5rem; }
+  p { color: var(--muted); margin-bottom: 1rem; }
+
+  /* Cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 2rem; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: .75rem; padding: 1.5rem;
+           transition: border-color .2s, transform .2s; }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card-icon { font-size: 2rem; margin-bottom: .75rem; }
+
+  /* Code blocks */
+  pre { background: #0a0a1a; border: 1px solid var(--border); border-radius: .5rem;
+        padding: 1.25rem; overflow-x: auto; margin: 1rem 0; position: relative; }
+  code { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: .875rem; color: #c4b5fd; }
+  pre code { color: var(--text); }
+  .kw  { color: #818cf8; } .str { color: #34d399; } .cmt { color: #475569; }
+  .fn  { color: #fbbf24; } .num { color: #f87171; } .type { color: #a78bfa; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; margin: 1.5rem 0; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th { background: var(--bg3); color: var(--accent2); padding: .75rem 1rem; text-align: left; border-bottom: 2px solid var(--border); }
+  td { padding: .65rem 1rem; border-bottom: 1px solid var(--border); color: var(--muted); }
+  td:first-child { color: var(--text); font-weight: 500; }
+  tr:hover td { background: var(--bg2); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+  .tab { padding: .6rem 1.2rem; cursor: pointer; border-bottom: 2px solid transparent;
+          color: var(--muted); font-size: .9rem; transition: all .2s; }
+  .tab.active { border-bottom-color: var(--accent); color: var(--accent2); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: .2rem .6rem; border-radius: 9999px; font-size: .75rem; font-weight: 600; margin: .15rem; }
+  .badge-green { background: rgba(52,211,153,.15); color: var(--green); border: 1px solid rgba(52,211,153,.3); }
+  .badge-blue  { background: rgba(99,102,241,.15); color: var(--accent2); border: 1px solid var(--border); }
+  .badge-yellow{ background: rgba(251,191,36,.15); color: var(--yellow); border: 1px solid rgba(251,191,36,.3); }
+
+  /* Footer */
+  footer { border-top: 1px solid var(--border); padding: 2rem; text-align: center; color: var(--muted); font-size: .85rem; }
+
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 2.2rem; }
+    nav ul { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">VoidDB</span>
+  <ul>
+    <li><a href="#quickstart">Quick Start</a></li>
+    <li><a href="#api">REST API</a></li>
+    <li><a href="#cli">CLI</a></li>
+    <li><a href="#orm">ORM</a></li>
+    <li><a href="#config">Config</a></li>
+    <li><a href="https://github.com/Nopass0/void" target="_blank">GitHub</a></li>
+  </ul>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <h1>VoidDB</h1>
+  <p>A high-performance LSM-tree document database written in Go — with REST API, S3-compatible blob storage, and a beautiful admin panel.</p>
+  <div class="hero-btns">
+    <a class="btn btn-primary" href="#quickstart">Get Started</a>
+    <a class="btn btn-secondary" href="https://github.com/Nopass0/void" target="_blank">View on GitHub</a>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-bar">
+  <div class="stat"><div class="stat-num">LSM</div><div class="stat-label">Storage Engine</div></div>
+  <div class="stat"><div class="stat-num">S3</div><div class="stat-label">Compatible Blob API</div></div>
+  <div class="stat"><div class="stat-num">JWT</div><div class="stat-label">Authentication</div></div>
+  <div class="stat"><div class="stat-num">KV</div><div class="stat-label">Built-in Cache</div></div>
+  <div class="stat"><div class="stat-num">.void</div><div class="stat-label">Native Backup Format</div></div>
+</div>
+
+<!-- Features -->
+<div class="container">
+<section>
+  <h2>Features</h2>
+  <div class="grid">
+    <div class="card"><div class="card-icon">⚡</div><h3>LSM-Tree Engine</h3><p>Custom skip-list memtable, WAL with CRC32, SSTable segments, Bloom filters, and LRU block cache — all from scratch.</p></div>
+    <div class="card"><div class="card-icon">🗄️</div><h3>Document Store</h3><p>Databases → Collections → Documents. Supports String, Number, Boolean, Array, Object, and Blob types.</p></div>
+    <div class="card"><div class="card-icon">☁️</div><h3>S3-Compatible Blobs</h3><p>Full S3 API compatibility: buckets, objects, ETag (MD5), multipart copy, and metadata headers.</p></div>
+    <div class="card"><div class="card-icon">🔒</div><h3>JWT Auth</h3><p>Roles: <code>admin</code>, <code>readwrite</code>, <code>readonly</code>. HMAC-SHA256 tokens with auto-refresh.</p></div>
+    <div class="card"><div class="card-icon">🖥️</div><h3>Admin Panel</h3><p>Next.js 14 + glassmorphism UI. Browse databases, run queries, manage blobs and users in real-time.</p></div>
+    <div class="card"><div class="card-icon">KV</div><h3>In-Memory Cache</h3><p>Built-in key-value cache with a REST API for sessions, hot lookups, and ephemeral computed state.</p></div>
+    <div class="card"><div class="card-icon">🔐</div><h3>TLS / Let's Encrypt</h3><p>Automatic HTTPS via ACME HTTP-01, bring-your-own certs (including wildcards), HTTP→HTTPS redirect.</p></div>
+    <div class="card"><div class="card-icon">💾</div><h3>Backup &amp; Restore</h3><p>Export to native <code>.void</code> archives (tar+gzip+NDJSON). Scheduled backups via cron or Task Scheduler.</p></div>
+    <div class="card"><div class="card-icon">🔧</div><h3>CLI Tool</h3><p><code>voidcli</code> — manage databases, collections, and documents from the terminal.</p></div>
+    <div class="card"><div class="card-icon">📦</div><h3>ORM Libraries</h3><p>Type-safe clients for TypeScript (<code>@voiddb/orm</code> on npm) and Go (<code>github.com/voiddb/orm-go</code>).</p></div>
+  </div>
+</section>
+
+<!-- Quick Start -->
+<section id="quickstart">
+  <h2>Quick Start</h2>
+
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('qs','windows')">Windows</div>
+    <div class="tab" onclick="showTab('qs','linux')">Linux / macOS</div>
+    <div class="tab" onclick="showTab('qs','docker')">Docker</div>
+  </div>
+
+  <div id="qs-windows" class="tab-content active">
+<pre><code><span class="cmt"># Clone and run the interactive setup wizard</span>
+git clone https://github.com/Nopass0/void.git
+cd void
+<span class="fn">.\scripts\setup.ps1</span>
+
+<span class="cmt"># Or start directly (builds automatically)</span>
+<span class="fn">.\scripts\run.ps1</span>
+
+<span class="cmt"># With admin panel</span>
+<span class="fn">.\scripts\run.ps1</span> -WithAdmin</code></pre>
+  </div>
+
+  <div id="qs-linux" class="tab-content">
+<pre><code>git clone https://github.com/Nopass0/void.git && cd void
+chmod +x scripts/*.sh
+<span class="fn">./scripts/setup.sh</span>           <span class="cmt"># interactive wizard</span>
+
+<span class="cmt"># Or start directly</span>
+<span class="fn">./scripts/run.sh</span>
+<span class="fn">./scripts/run.sh</span> --with-admin  <span class="cmt"># server + admin panel</span></code></pre>
+  </div>
+
+  <div id="qs-docker" class="tab-content">
+<pre><code>git clone https://github.com/Nopass0/void.git && cd void
+cp .env.example .env          <span class="cmt"># edit JWT_SECRET + ADMIN_PASSWORD</span>
+docker compose up -d
+
+<span class="cmt"># API at http://localhost:7700</span>
+<span class="cmt"># Admin at http://localhost:3000</span></code></pre>
+  </div>
+
+  <h3 style="margin-top:2rem">First steps</h3>
+<pre><code><span class="cmt"># Log in with CLI</span>
+<span class="fn">voidcli</span> login              <span class="cmt"># default: admin / admin</span>
+
+<span class="cmt"># Create a database and collection</span>
+<span class="fn">voidcli</span> db  create myapp
+<span class="fn">voidcli</span> col create myapp users
+
+<span class="cmt"># Insert a document</span>
+<span class="fn">voidcli</span> doc insert myapp users <span class="str">'{"name":"Alice","age":30,"active":true}'</span>
+
+<span class="cmt"># Query documents</span>
+<span class="fn">voidcli</span> doc find myapp users <span class="str">'{"where":[{"field":"age","op":"gt","value":18}]}'</span>
+
+<span class="cmt"># Backup</span>
+<span class="fn">voidcli</span> backup</code></pre>
+</section>
+
+<!-- REST API -->
+<section id="api">
+  <h2>REST API</h2>
+  <p>Base URL: <code>http://localhost:7700</code> &nbsp;|&nbsp; All endpoints return JSON &nbsp;|&nbsp; Auth via <code>Authorization: Bearer &lt;token&gt;</code></p>
+
+  <h3 style="margin-top:1.5rem">Authentication</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>POST</td><td>/v1/auth/login</td><td>Login → <code>{access_token, refresh_token}</code></td></tr>
+    <tr><td>POST</td><td>/v1/auth/refresh</td><td>Refresh tokens</td></tr>
+    <tr><td>GET</td><td>/v1/auth/me</td><td>Current user info</td></tr>
+  </table></div>
+
+  <h3 style="margin-top:1.5rem">Databases &amp; Collections</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>GET</td><td>/v1/databases</td><td>List all databases</td></tr>
+    <tr><td>POST</td><td>/v1/databases</td><td>Create database <code>{name}</code></td></tr>
+    <tr><td>GET</td><td>/v1/databases/:db/collections</td><td>List collections</td></tr>
+    <tr><td>POST</td><td>/v1/databases/:db/collections</td><td>Create collection <code>{name}</code></td></tr>
+  </table></div>
+
+  <h3 style="margin-top:1.5rem">Documents</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>POST</td><td>/v1/databases/:db/:col</td><td>Insert document → <code>{_id, ...}</code></td></tr>
+    <tr><td>GET</td><td>/v1/databases/:db/:col/:id</td><td>Get document by ID</td></tr>
+    <tr><td>PUT</td><td>/v1/databases/:db/:col/:id</td><td>Replace document</td></tr>
+    <tr><td>PATCH</td><td>/v1/databases/:db/:col/:id</td><td>Patch (merge) document</td></tr>
+    <tr><td>DELETE</td><td>/v1/databases/:db/:col/:id</td><td>Delete document</td></tr>
+    <tr><td>POST</td><td>/v1/databases/:db/:col/query</td><td>Query with filters/sort/pagination</td></tr>
+    <tr><td>GET</td><td>/v1/databases/:db/:col/count</td><td>Count matching documents</td></tr>
+  </table></div>
+
+  <h3 style="margin-top:1.5rem">Query syntax</h3>
+<pre><code><span class="cmt">// POST /v1/databases/myapp/users/query</span>
+{
+  <span class="str">"where"</span>: [
+    { <span class="str">"field"</span>: <span class="str">"age"</span>,    <span class="str">"op"</span>: <span class="str">"gte"</span>,        <span class="str">"value"</span>: <span class="num">18</span> },
+    { <span class="str">"field"</span>: <span class="str">"active"</span>, <span class="str">"op"</span>: <span class="str">"eq"</span>,         <span class="str">"value"</span>: <span class="kw">true</span> },
+    { <span class="str">"field"</span>: <span class="str">"name"</span>,   <span class="str">"op"</span>: <span class="str">"starts_with"</span>, <span class="str">"value"</span>: <span class="str">"A"</span> }
+  ],
+  <span class="str">"order_by"</span>: [{ <span class="str">"field"</span>: <span class="str">"age"</span>, <span class="str">"dir"</span>: <span class="str">"asc"</span> }],
+  <span class="str">"limit"</span>: <span class="num">25</span>,
+  <span class="str">"skip"</span>:  <span class="num">0</span>
+}</code></pre>
+
+  <p>Supported operators: <span class="badge badge-blue">eq</span> <span class="badge badge-blue">ne</span> <span class="badge badge-blue">gt</span> <span class="badge badge-blue">gte</span> <span class="badge badge-blue">lt</span> <span class="badge badge-blue">lte</span> <span class="badge badge-blue">contains</span> <span class="badge badge-blue">starts_with</span> <span class="badge badge-blue">in</span></p>
+
+  <h3 style="margin-top:1.5rem">S3-Compatible Blob API</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>GET</td><td>/s3/</td><td>List buckets</td></tr>
+    <tr><td>PUT</td><td>/s3/:bucket</td><td>Create bucket</td></tr>
+    <tr><td>GET</td><td>/s3/:bucket</td><td>List objects</td></tr>
+    <tr><td>PUT</td><td>/s3/:bucket/:key</td><td>Upload object</td></tr>
+    <tr><td>GET</td><td>/s3/:bucket/:key</td><td>Download object</td></tr>
+    <tr><td>HEAD</td><td>/s3/:bucket/:key</td><td>Object metadata</td></tr>
+    <tr><td>DELETE</td><td>/s3/:bucket/:key</td><td>Delete object</td></tr>
+  </table></div>
+
+  <h3 style="margin-top:1.5rem">Backup API</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+    <tr><td>POST</td><td>/v1/backup</td><td>admin</td><td>Export to <code>.void</code> archive (streamed)</td></tr>
+    <tr><td>POST</td><td>/v1/backup/restore</td><td>admin</td><td>Import from raw <code>.void</code> body</td></tr>
+  </table></div>
+
+  <h3 style="margin-top:1.5rem">Cache API</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>GET</td><td>/v1/cache/:key</td><td>Read cached value</td></tr>
+    <tr><td>POST</td><td>/v1/cache/:key</td><td>Write cached JSON value</td></tr>
+    <tr><td>DELETE</td><td>/v1/cache/:key</td><td>Delete cached value</td></tr>
+  </table></div>
+</section>
+
+<!-- CLI -->
+<section id="cli">
+  <h2>CLI — voidcli</h2>
+  <p>Build with <code>go build ./cmd/voidcli</code> or run <code>.\scripts\setup.ps1</code> which adds it to your PATH automatically.</p>
+<pre><code><span class="fn">voidcli</span> [--url http://host:7700] [--token JWT] COMMAND
+
+<span class="cmt"># Authentication</span>
+<span class="fn">voidcli</span> login [--user admin]
+<span class="fn">voidcli</span> logout
+<span class="fn">voidcli</span> status
+
+<span class="cmt"># Database management</span>
+<span class="fn">voidcli</span> db list
+<span class="fn">voidcli</span> db create &lt;name&gt;
+<span class="fn">voidcli</span> db drop   &lt;name&gt;
+
+<span class="cmt"># Collection management</span>
+<span class="fn">voidcli</span> col list   &lt;db&gt;
+<span class="fn">voidcli</span> col create &lt;db&gt; &lt;name&gt;
+<span class="fn">voidcli</span> col drop   &lt;db&gt; &lt;name&gt;
+
+<span class="cmt"># Document operations</span>
+<span class="fn">voidcli</span> doc insert &lt;db&gt; &lt;col&gt; <span class="str">'{"field":"value"}'</span>
+<span class="fn">voidcli</span> doc insert &lt;db&gt; &lt;col&gt; @myfile.json   <span class="cmt"># from file</span>
+<span class="fn">voidcli</span> doc find   &lt;db&gt; &lt;col&gt; [filter-json]
+<span class="fn">voidcli</span> doc get    &lt;db&gt; &lt;col&gt; &lt;id&gt;
+<span class="fn">voidcli</span> doc delete &lt;db&gt; &lt;col&gt; &lt;id&gt;
+
+<span class="cmt"># Backup</span>
+<span class="fn">voidcli</span> backup              <span class="cmt"># all databases</span>
+<span class="fn">voidcli</span> backup mydb         <span class="cmt"># specific database</span>
+<span class="fn">voidcli</span> restore backup.void</code></pre>
+</section>
+
+<!-- ORM -->
+<section id="orm">
+  <h2>ORM Libraries</h2>
+
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('orm','ts')">TypeScript</div>
+    <div class="tab" onclick="showTab('orm','go')">Go</div>
+  </div>
+
+  <div id="orm-ts" class="tab-content active">
+    <p>Install: <code>npm install @voiddb/orm</code> &nbsp; or &nbsp; <code>bun add @voiddb/orm</code></p>
+<pre><code><span class="kw">import</span> { <span class="type">VoidClient</span> } <span class="kw">from</span> <span class="str">'@voiddb/orm'</span>;
+
+<span class="kw">const</span> client = <span class="kw">new</span> <span class="type">VoidClient</span>({ url: <span class="str">'http://localhost:7700'</span> });
+<span class="kw">await</span> client.<span class="fn">login</span>(<span class="str">'admin'</span>, <span class="str">'admin'</span>);
+
+<span class="kw">const</span> users = client.<span class="fn">db</span>(<span class="str">'myapp'</span>).<span class="fn">collection</span>&lt;<span class="type">User</span>&gt;(<span class="str">'users'</span>);
+
+<span class="cmt">// Insert</span>
+<span class="kw">const</span> doc = <span class="kw">await</span> users.<span class="fn">insert</span>({ name: <span class="str">'Alice'</span>, age: <span class="num">30</span> });
+
+<span class="cmt">// Query (immutable builder)</span>
+<span class="kw">const</span> results = <span class="kw">await</span> users
+  .<span class="fn">query</span>()
+  .<span class="fn">where</span>(<span class="str">'age'</span>, <span class="str">'gte'</span>, <span class="num">18</span>)
+  .<span class="fn">where</span>(<span class="str">'active'</span>, <span class="str">'eq'</span>, <span class="kw">true</span>)
+  .<span class="fn">orderBy</span>(<span class="str">'age'</span>, <span class="str">'asc'</span>)
+  .<span class="fn">limit</span>(<span class="num">10</span>)
+  .<span class="fn">execute</span>();
+
+<span class="cmt">// Update</span>
+<span class="kw">await</span> users.<span class="fn">patch</span>(doc._id, { age: <span class="num">31</span> });
+
+<span class="cmt">// Delete</span>
+<span class="kw">await</span> users.<span class="fn">delete</span>(doc._id);</code></pre>
+  </div>
+
+  <div id="orm-go" class="tab-content">
+    <p>Install: <code>go get github.com/voiddb/orm-go</code></p>
+<pre><code><span class="kw">import</span> voidorm <span class="str">"github.com/voiddb/orm-go"</span>
+
+client, _ := voidorm.<span class="fn">New</span>(voidorm.<span class="type">Config</span>{
+    URL:      <span class="str">"http://localhost:7700"</span>,
+    Username: <span class="str">"admin"</span>,
+    Password: <span class="str">"admin"</span>,
+})
+
+col := client.<span class="fn">DB</span>(<span class="str">"myapp"</span>).<span class="fn">Collection</span>(<span class="str">"users"</span>)
+
+<span class="cmt">// Insert</span>
+id, _ := col.<span class="fn">Insert</span>(voidorm.<span class="type">Doc</span>{
+    <span class="str">"name"</span>: <span class="str">"Alice"</span>, <span class="str">"age"</span>: <span class="num">30</span>,
+})
+
+<span class="cmt">// Query</span>
+res, _ := col.<span class="fn">Query</span>().
+    <span class="fn">Where</span>(<span class="str">"age"</span>, voidorm.<span class="type">Gte</span>, <span class="num">18</span>).
+    <span class="fn">OrderBy</span>(<span class="str">"age"</span>, voidorm.<span class="type">Asc</span>).
+    <span class="fn">Limit</span>(<span class="num">10</span>).
+    <span class="fn">Execute</span>()
+
+<span class="cmt">// Get / Delete</span>
+doc, _ := col.<span class="fn">GetByID</span>(id)
+col.<span class="fn">Delete</span>(id)</code></pre>
+  </div>
+</section>
+
+<!-- Config -->
+<section id="config">
+  <h2>Configuration</h2>
+  <p>Edit <code>config.yaml</code> or set <code>VOID_*</code> environment variables (env vars take precedence).</p>
+  <div class="table-wrap"><table>
+    <tr><th>Env Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td>VOID_HOST</td><td>0.0.0.0</td><td>Bind address</td></tr>
+    <tr><td>VOID_PORT</td><td>7700</td><td>API port</td></tr>
+    <tr><td>VOID_DATA_DIR</td><td>./data</td><td>Storage directory</td></tr>
+    <tr><td>VOID_BLOB_DIR</td><td>./blob</td><td>Blob storage directory</td></tr>
+    <tr><td>VOID_JWT_SECRET</td><td>—</td><td><strong>Required.</strong> HMAC signing key (min 32 chars)</td></tr>
+    <tr><td>VOID_ADMIN_PASSWORD</td><td>admin</td><td>Initial admin password</td></tr>
+    <tr><td>VOID_LOG_LEVEL</td><td>info</td><td>debug | info | warn | error</td></tr>
+    <tr><td>VOID_TLS_MODE</td><td>off</td><td>off | file | acme</td></tr>
+    <tr><td>log.output_path</td><td>./logs/voiddb.log</td><td>Rotated file logs retained for 7 days</td></tr>
+    <tr><td>VOID_DOMAIN</td><td>—</td><td>Public domain (required for acme mode)</td></tr>
+    <tr><td>VOID_ACME_EMAIL</td><td>—</td><td>Let's Encrypt contact email</td></tr>
+    <tr><td>VOID_TLS_CERT</td><td>—</td><td>Certificate PEM path (file mode)</td></tr>
+    <tr><td>VOID_TLS_KEY</td><td>—</td><td>Private key PEM path (file mode)</td></tr>
+  </table></div>
+</section>
+</div><!-- /container -->
+
+<footer>
+  <p>VoidDB &copy; 2024 &nbsp;&bull;&nbsp; MIT License &nbsp;&bull;&nbsp;
+  <a href="https://github.com/Nopass0/void">GitHub</a> &nbsp;&bull;&nbsp;
+  <a href="https://github.com/Nopass0/void_ts">TypeScript ORM</a> &nbsp;&bull;&nbsp;
+  <a href="https://github.com/Nopass0/void_go">Go ORM</a></p>
+</footer>
+
+<script>
+function showTab(group, id) {
+  document.querySelectorAll('[id^="' + group + '-"]').forEach(el => el.classList.remove('active'));
+  document.getElementById(group + '-' + id).classList.add('active');
+  event.target.closest('.tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

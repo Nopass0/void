@@ -70,6 +70,18 @@ export interface EngineStats {
   wal_seq: number;
 }
 
+/** Collection Schema Definitions */
+export interface SchemaField {
+  name: string;
+  type: "string" | "number" | "boolean" | "datetime" | "array" | "object";
+  required?: boolean;
+  default?: string;
+}
+
+export interface Schema {
+  fields: SchemaField[];
+}
+
 /** Blob object metadata. */
 export interface ObjectMeta {
   bucket: string;
@@ -79,6 +91,20 @@ export interface ObjectMeta {
   etag: string;
   last_modified: string;
   metadata?: Record<string, string>;
+}
+
+function getAuthHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const token = localStorage.getItem("void_access_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function parseS3Xml(xml: string): globalThis.Document {
+  return new DOMParser().parseFromString(xml, "application/xml");
+}
+
+function getText(node: Element, selector: string): string {
+  return node.querySelector(selector)?.textContent?.trim() || "";
 }
 
 // ── Client ────────────────────────────────────────────────────────────────────
@@ -199,6 +225,16 @@ export async function createCollection(db: string, name: string): Promise<void> 
   await http.post(`/v1/databases/${db}/collections`, { name });
 }
 
+export async function getSchema(db: string, col: string): Promise<Schema> {
+  const res = await http.get<Schema>(`/v1/databases/${db}/${col}/schema`);
+  return res.data;
+}
+
+export async function setSchema(db: string, col: string, schema: Schema): Promise<Schema> {
+  const res = await http.put<Schema>(`/v1/databases/${db}/${col}/schema`, schema);
+  return res.data;
+}
+
 // ── Documents ─────────────────────────────────────────────────────────────────
 
 export async function insertDocument(
@@ -262,17 +298,36 @@ export async function getStats(): Promise<EngineStats> {
 // ── Blob / S3 API ─────────────────────────────────────────────────────────────
 
 export async function listBuckets(): Promise<string[]> {
-  // Uses the REST API wrapper, not raw S3 XML.
-  const res = await http.get<{ buckets: string[] }>("/v1/blob/buckets");
-  return res.data.buckets || [];
+  const res = await axios.get<string>(`${BASE_URL}/s3/`, {
+    headers: getAuthHeaders(),
+    responseType: "text",
+  });
+  const xml = parseS3Xml(res.data);
+  return Array.from(xml.querySelectorAll("Bucket > Name"))
+    .map((node) => node.textContent?.trim() || "")
+    .filter(Boolean);
 }
 
 export async function listObjects(bucket: string, prefix = ""): Promise<ObjectMeta[]> {
-  const res = await http.get<{ objects: ObjectMeta[] }>(
-    `/v1/blob/buckets/${bucket}/objects`,
-    { params: { prefix } }
-  );
-  return res.data.objects || [];
+  const res = await axios.get<string>(`${BASE_URL}/s3/${encodeURIComponent(bucket)}`, {
+    headers: getAuthHeaders(),
+    params: prefix ? { prefix } : undefined,
+    responseType: "text",
+  });
+  const xml = parseS3Xml(res.data);
+  return Array.from(xml.querySelectorAll("Contents")).map((entry) => ({
+    bucket,
+    key: getText(entry, "Key"),
+    size: Number(getText(entry, "Size") || "0"),
+    content_type: "application/octet-stream",
+    etag: getText(entry, "ETag").replaceAll('"', ""),
+    last_modified: getText(entry, "LastModified"),
+    metadata: {},
+  }));
+}
+
+export async function createBucket(bucket: string): Promise<void> {
+  await http.put(`/s3/${bucket}`);
 }
 
 export async function uploadObject(

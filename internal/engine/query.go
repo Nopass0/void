@@ -51,13 +51,18 @@ const (
 	Desc SortDir = "desc"
 )
 
-// filter represents a single WHERE clause predicate.
-type filter struct {
-	field string
-	op    Op
-	value types.Value
-	// list is used by the In operator.
-	list []types.Value
+// Predicate represents a node in the WHERE clause tree.
+type Predicate struct {
+	// If IsLogic is true, this is an AND/OR node containing Children.
+	IsLogic  bool
+	LogicOp  string // "AND" or "OR"
+	Children []Predicate
+
+	// Otherwise, it's a field comparison node.
+	Field string
+	Op    Op
+	Value types.Value
+	List  []types.Value
 }
 
 // sortSpec describes one level of sorting.
@@ -66,30 +71,48 @@ type sortSpec struct {
 	dir   SortDir
 }
 
+// JoinSpec defines how to eager-load related documents.
+type JoinSpec struct {
+	As         string // Output field name
+	Relation   string // "one_to_one", "one_to_many"
+	TargetCol  string 
+	LocalKey   string // Field in this collection
+	ForeignKey string // Field in target collection
+}
+
 // Query is an immutable query specification built with the fluent API.
 type Query struct {
-	filters []filter
-	sorts   []sortSpec
-	limit   int
-	skip    int
+	root  Predicate
+	sorts []sortSpec
+	joins []JoinSpec
+	limit int
+	skip  int
 }
 
 // NewQuery creates an empty query that matches all documents.
+// The root predicate defaults to an AND node.
 func NewQuery() *Query {
-	return &Query{limit: -1}
+	return &Query{
+		root:  Predicate{IsLogic: true, LogicOp: "AND"},
+		limit: -1,
+	}
 }
 
-// Where adds a filter predicate.
+// Where adds a field predicate to the root AND node.
 func (q *Query) Where(field string, op Op, value types.Value) *Query {
 	cp := q.clone()
-	cp.filters = append(cp.filters, filter{field: field, op: op, value: value})
+	cp.root.Children = append(cp.root.Children, Predicate{
+		Field: field,
+		Op:    op,
+		Value: value,
+	})
 	return cp
 }
 
-// WhereIn adds a filter that tests if field is in a list of values.
-func (q *Query) WhereIn(field string, values ...types.Value) *Query {
+// WhereNode replaces the root with a specific Predicate tree.
+func (q *Query) WhereNode(root Predicate) *Query {
 	cp := q.clone()
-	cp.filters = append(cp.filters, filter{field: field, op: In, list: values})
+	cp.root = root
 	return cp
 }
 
@@ -97,6 +120,13 @@ func (q *Query) WhereIn(field string, values ...types.Value) *Query {
 func (q *Query) OrderBy(field string, dir SortDir) *Query {
 	cp := q.clone()
 	cp.sorts = append(cp.sorts, sortSpec{field: field, dir: dir})
+	return cp
+}
+
+// Include adds an eager-loading join specification.
+func (q *Query) Include(join JoinSpec) *Query {
+	cp := q.clone()
+	cp.joins = append(cp.joins, join)
 	return cp
 }
 
@@ -117,17 +147,36 @@ func (q *Query) Skip(n int) *Query {
 // clone creates a shallow copy of the Query.
 func (q *Query) clone() *Query {
 	cp := *q
-	cp.filters = append([]filter(nil), q.filters...)
+	// deeply copy the predicate tree
+	cp.root = clonePredicate(q.root)
 	cp.sorts = append([]sortSpec(nil), q.sorts...)
+	cp.joins = append([]JoinSpec(nil), q.joins...)
 	return &cp
 }
 
-// matches returns true if doc satisfies all WHERE predicates.
-func (q *Query) matches(doc *types.Document) bool {
-	for _, f := range q.filters {
-		if !evalFilter(doc, f) {
-			return false
+func clonePredicate(p Predicate) Predicate {
+	cp := p
+	if len(p.Children) > 0 {
+		cp.Children = make([]Predicate, len(p.Children))
+		for i, c := range p.Children {
+			cp.Children[i] = clonePredicate(c)
 		}
+	}
+	if len(p.List) > 0 {
+		cp.List = append([]types.Value(nil), p.List...)
+	}
+	return cp
+}
+
+// Joins returns the active Join specifications.
+func (q *Query) Joins() []JoinSpec {
+	return q.joins
+}
+
+// matches returns true if doc satisfies the root predicate tree.
+func (q *Query) matches(doc *types.Document) bool {
+	if !q.root.IsLogic || len(q.root.Children) > 0 {
+		return evalPredicate(doc, q.root)
 	}
 	return true
 }
@@ -171,34 +220,60 @@ func (q *Query) applyPagination(docs []*types.Document) []*types.Document {
 	return docs
 }
 
-// --- filter evaluation -------------------------------------------------------
+// --- predicate evaluation ----------------------------------------------------
 
-// evalFilter applies a single filter to a document.
-func evalFilter(doc *types.Document, f filter) bool {
-	v := doc.Get(f.field)
+// evalPredicate applies a predicate tree to a document.
+func evalPredicate(doc *types.Document, p Predicate) bool {
+	if p.IsLogic {
+		if p.LogicOp == "OR" {
+			if len(p.Children) == 0 {
+				return true
+			}
+			for _, c := range p.Children {
+				if evalPredicate(doc, c) {
+					return true
+				}
+			}
+			return false
+		}
+		// Default to AND
+		for _, c := range p.Children {
+			if !evalPredicate(doc, c) {
+				return false
+			}
+		}
+		return true
+	}
 
-	switch f.op {
+	var v types.Value
+	if p.Field == "_id" {
+		v = types.String(doc.ID)
+	} else {
+		v = doc.Get(p.Field)
+	}
+
+	switch p.Op {
 	case Eq:
-		return types.Equal(v, f.value)
+		return types.Equal(v, p.Value)
 	case Ne:
-		return !types.Equal(v, f.value)
+		return !types.Equal(v, p.Value)
 	case Gt:
-		return compareValues(v, f.value) > 0
+		return compareValues(v, p.Value) > 0
 	case Gte:
-		return compareValues(v, f.value) >= 0
+		return compareValues(v, p.Value) >= 0
 	case Lt:
-		return compareValues(v, f.value) < 0
+		return compareValues(v, p.Value) < 0
 	case Lte:
-		return compareValues(v, f.value) <= 0
+		return compareValues(v, p.Value) <= 0
 	case Contains:
-		return evalContains(v, f.value)
+		return evalContains(v, p.Value)
 	case StartsWith:
-		if v.Type() == types.TypeString && f.value.Type() == types.TypeString {
-			return strings.HasPrefix(v.StringVal(), f.value.StringVal())
+		if v.Type() == types.TypeString && p.Value.Type() == types.TypeString {
+			return strings.HasPrefix(v.StringVal(), p.Value.StringVal())
 		}
 		return false
 	case In:
-		for _, item := range f.list {
+		for _, item := range p.List {
 			if types.Equal(v, item) {
 				return true
 			}

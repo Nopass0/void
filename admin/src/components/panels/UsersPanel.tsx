@@ -6,22 +6,20 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UserPlus, Trash2, RefreshCw, Shield, X, Loader2 } from "lucide-react";
+import { UserPlus, Trash2, RefreshCw, Shield, X, Copy } from "lucide-react";
 import { toast } from "sonner";
-import { GlassCard } from "@/components/ui/glass-card";
+import { Card } from "@/components/ui/glass-card";
 import { useStore } from "@/store";
 import * as api from "@/lib/api";
 import type { User } from "@/lib/api";
+import { ContextMenu, type ContextMenuEntry } from "@/components/ui/context-menu";
 
 const ROLE_COLORS: Record<string, string> = {
   admin: "text-red-300 bg-red-500/10 border-red-500/20",
   readwrite: "text-blue-300 bg-blue-500/10 border-blue-500/20",
-  readonly: "text-muted-foreground bg-white/5 border-white/10",
+  readonly: "text-muted-foreground bg-surface-4 border-border",
 };
 
-/**
- * UsersPanel lists users and provides create/delete actions.
- */
 export function UsersPanel() {
   const { user: me } = useStore();
   const [users, setUsers] = useState<User[]>([]);
@@ -70,52 +68,81 @@ export function UsersPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold gradient-text">User Management</h2>
+        <h2 className="text-lg font-semibold text-foreground">User Management</h2>
         <div className="flex items-center gap-2">
-          <button onClick={load} className="text-muted-foreground hover:text-void-400 transition-colors">
+          <button onClick={load} className="btn-ghost">
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
           {me?.role === "admin" && (
-            <motion.button
-              whileTap={{ scale: 0.96 }}
+            <button
               onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 text-sm bg-void-600/40 hover:bg-void-600/60 text-void-200 px-3 py-2 rounded-lg border border-void-500/30 transition-colors"
+              className="btn-primary text-sm"
             >
               <UserPlus className="w-4 h-4" />
               New User
-            </motion.button>
+            </button>
           )}
         </div>
       </div>
 
-      <div className="grid gap-3">
-        {users.map((u, i) => (
-          <GlassCard key={u.id} delay={i * 0.05} hoverable className="flex items-center gap-4 p-4">
-            <div className="w-9 h-9 rounded-full bg-void-600/30 flex items-center justify-center text-void-300 font-bold uppercase">
-              {u.id[0]}
-            </div>
-            <div className="flex-1">
-              <p className="font-medium">{u.id}</p>
-              <p className="text-xs text-muted-foreground">
-                Created {new Date(u.created_at * 1000).toLocaleDateString()}
-              </p>
-            </div>
-            <span
-              className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${ROLE_COLORS[u.role] ?? ""}`}
-            >
-              <Shield className="w-3 h-3" />
-              {u.role}
-            </span>
-            {me?.role === "admin" && u.id !== me.id && (
-              <button
-                onClick={() => handleDelete(u.id)}
-                className="text-muted-foreground hover:text-red-400 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-          </GlassCard>
-        ))}
+      {/* Users table */}
+      <div className="rounded-lg border border-border bg-surface-2 overflow-hidden">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Role</th>
+              <th>Created</th>
+              <th className="w-10" />
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => {
+              const userMenu: ContextMenuEntry[] = [
+                { label: "Copy username", icon: <Copy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(u.id); toast.success("Username copied"); } },
+                ...(me?.role === "admin" && u.id !== me.id ? [
+                  { separator: true } as ContextMenuEntry,
+                  { label: "Delete user", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleDelete(u.id) } as ContextMenuEntry,
+                ] : []),
+              ];
+              return (
+              <ContextMenu key={u.id} items={userMenu} as="tr">
+                <tr className="group">
+                  <td>
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-md bg-surface-4 flex items-center justify-center text-neon-500 text-xs font-bold uppercase">
+                        {u.id[0]}
+                      </div>
+                      <span className="font-medium text-sm">{u.id}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span
+                      className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md border ${ROLE_COLORS[u.role] ?? ""}`}
+                    >
+                      <Shield className="w-3 h-3" />
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="text-muted-foreground text-xs">
+                    {new Date(u.created_at * 1000).toLocaleDateString()}
+                  </td>
+                  <td>
+                    {me?.role === "admin" && u.id !== me.id && (
+                      <button
+                        onClick={() => handleDelete(u.id)}
+                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              </ContextMenu>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* Create user modal */}
@@ -125,39 +152,39 @@ export function UsersPanel() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
             onClick={() => setShowCreate(false)}
           >
             <motion.div
-              initial={{ scale: 0.9, y: 16 }}
+              initial={{ scale: 0.95, y: 10 }}
               animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 16 }}
+              exit={{ scale: 0.95, y: 10 }}
               onClick={(e) => e.stopPropagation()}
-              className="glass rounded-2xl w-full max-w-sm border border-void-500/20 p-6 space-y-4"
+              className="rounded-lg w-full max-w-sm bg-surface-2 border border-border shadow-modal p-6 space-y-4"
             >
               <div className="flex items-center justify-between">
-                <h3 className="font-semibold gradient-text">New User</h3>
-                <button onClick={() => setShowCreate(false)}>
-                  <X className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-semibold text-sm">New User</h3>
+                <button onClick={() => setShowCreate(false)} className="btn-ghost !p-1">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
               {["username", "password"].map((field) => (
-                <div key={field} className="space-y-1">
+                <div key={field} className="space-y-1.5">
                   <label className="text-xs text-muted-foreground capitalize">{field}</label>
                   <input
                     type={field === "password" ? "password" : "text"}
                     value={form[field as "username" | "password"]}
                     onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg glass border border-void-500/20 text-sm focus:outline-none focus:border-void-400/50 transition-all bg-transparent"
+                    className="input-field"
                   />
                 </div>
               ))}
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground">Role</label>
                 <select
                   value={form.role}
                   onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as User["role"] }))}
-                  className="w-full px-3 py-2 rounded-lg glass border border-void-500/20 text-sm focus:outline-none bg-transparent text-foreground"
+                  className="select-field"
                 >
                   <option value="readonly">Read Only</option>
                   <option value="readwrite">Read/Write</option>
@@ -166,7 +193,7 @@ export function UsersPanel() {
               </div>
               <button
                 onClick={handleCreate}
-                className="w-full py-2.5 bg-void-600/50 hover:bg-void-600/70 text-void-100 rounded-lg border border-void-500/30 transition-colors text-sm font-medium"
+                className="btn-primary w-full justify-center text-sm py-2"
               >
                 Create User
               </button>

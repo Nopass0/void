@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-    Start VoidDB server (and optionally the admin panel) on Windows.
+    Start VoidDB server and optional admin panel on Windows.
 .PARAMETER Config
     Path to config.yaml (default: .\config.yaml).
 .PARAMETER Dev
     Watch for source changes and auto-rebuild (requires 'air').
 .PARAMETER WithAdmin
-    Also start the admin panel in dev mode after the server.
+    Start the admin panel together with the server.
 .PARAMETER AdminProd
-    Start the admin panel in production mode (requires built assets).
+    Start the admin panel in production mode.
 .PARAMETER AdminOnly
     Start only the admin panel, not the server.
 .EXAMPLE
@@ -26,102 +26,225 @@ param(
 )
 
 $ROOT = Split-Path $PSScriptRoot -Parent
-if (-not $Config) { $Config = Join-Path $ROOT "config.yaml" }
+if (-not $Config) {
+    $Config = Join-Path $ROOT "config.yaml"
+}
 
-# ── Load .env ─────────────────────────────────────────────────────────────────
 $envFile = Join-Path $ROOT ".env"
 if (Test-Path $envFile) {
     Get-Content $envFile | Where-Object { $_ -match '^\s*[^#].*=.*' } | ForEach-Object {
         $parts = $_ -split '=', 2
-        [System.Environment]::SetEnvironmentVariable($parts[0].Trim(), $parts[1].Trim(), 'Process')
+        [System.Environment]::SetEnvironmentVariable($parts[0].Trim(), $parts[1].Trim(), "Process")
     }
 }
+
 $PORT = if ($env:VOID_PORT) { $env:VOID_PORT } else { "7700" }
-
-# ── Detect package manager ────────────────────────────────────────────────────
 $PKG = ""
-if (Get-Command bun  -ErrorAction SilentlyContinue) { $PKG = "bun" }
-elseif (Get-Command npm -ErrorAction SilentlyContinue) { $PKG = "npm" }
-
-# ── Auto-build server binary ──────────────────────────────────────────────────
-$bin = Join-Path $ROOT "voiddb.exe"
-
-if (-not $AdminOnly) {
-    if (-not (Test-Path $bin)) {
-        Write-Host "[run] Building VoidDB..." -ForegroundColor Cyan
-        Push-Location $ROOT
-        $env:CGO_ENABLED = "0"
-        $env:GOPROXY     = "https://goproxy.cn,https://goproxy.io,direct"
-        $env:GONOSUMDB   = "*"
-        go build -mod=mod -o $bin .\cmd\voiddb
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "[run] Build failed." -ForegroundColor Red
-            Pop-Location; exit 1
-        }
-        # Also build voidcli if not present.
-        $cli = Join-Path $ROOT "voidcli.exe"
-        if (-not (Test-Path $cli)) {
-            go build -mod=mod -o $cli .\cmd\voidcli
-        }
-        Pop-Location
-        Write-Host "[run] Build OK" -ForegroundColor Green
-    }
+if (Get-Command bun -ErrorAction SilentlyContinue) {
+    $PKG = "bun"
+} elseif (Get-Command npm -ErrorAction SilentlyContinue) {
+    $PKG = "npm"
 }
 
-# ── Admin panel helper ────────────────────────────────────────────────────────
+function Get-PortProcess {
+    param([int]$Port)
+
+    $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $conn) {
+        return $null
+    }
+
+    return Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
+}
+
+function Test-BinaryNeedsBuild {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        return $true
+    }
+
+    $binTime = (Get-Item $Path).LastWriteTimeUtc
+    $sourceRoots = @(
+        (Join-Path $ROOT "cmd"),
+        (Join-Path $ROOT "internal")
+    )
+
+    $newerSource = Get-ChildItem -Path $sourceRoots -Recurse -Filter *.go -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTimeUtc -gt $binTime } |
+        Select-Object -First 1
+
+    return [bool]$newerSource
+}
+
+function Ensure-Binaries {
+    $serverBin = Join-Path $ROOT "voiddb.exe"
+    $cliBin = Join-Path $ROOT "voidcli.exe"
+    $needsServer = Test-BinaryNeedsBuild -Path $serverBin
+    $needsCLI = Test-BinaryNeedsBuild -Path $cliBin
+
+    if (-not $needsServer -and -not $needsCLI) {
+        return $serverBin
+    }
+
+    Write-Host "[run] Building VoidDB..." -ForegroundColor Cyan
+    Push-Location $ROOT
+    try {
+        $env:CGO_ENABLED = "0"
+        if (-not $env:GOPROXY) {
+            $env:GOPROXY = "https://goproxy.cn,https://goproxy.io,direct"
+        }
+        if (-not $env:GONOSUMDB) {
+            $env:GONOSUMDB = "*"
+        }
+
+        go build -mod=mod -o $serverBin .\cmd\voiddb
+        if ($LASTEXITCODE -ne 0) {
+            throw "server build failed"
+        }
+
+        go build -mod=mod -o $cliBin .\cmd\voidcli
+        if ($LASTEXITCODE -ne 0) {
+            throw "cli build failed"
+        }
+    } catch {
+        Write-Host "[run] Build failed: $_" -ForegroundColor Red
+        exit 1
+    } finally {
+        Pop-Location
+    }
+
+    Write-Host "[run] Build OK" -ForegroundColor Green
+    return $serverBin
+}
+
 function Start-AdminPanel {
     param([bool]$Prod = $false)
+
     if (-not $PKG) {
         Write-Host "[admin] Bun/Node not found - cannot start admin panel" -ForegroundColor Yellow
         return
     }
+
     $adminDir = Join-Path $ROOT "admin"
+    if (-not (Test-Path $adminDir)) {
+        Write-Host "[admin] Admin directory not found: $adminDir" -ForegroundColor Yellow
+        return
+    }
+
     if (-not (Test-Path (Join-Path $adminDir "node_modules"))) {
         Write-Host "[admin] Installing dependencies..." -ForegroundColor Cyan
         Push-Location $adminDir
-        & $PKG install
-        Pop-Location
+        try {
+            & $PKG install
+        } finally {
+            Pop-Location
+        }
     }
-    # Write .env.local.
+
     "NEXT_PUBLIC_API_URL=http://localhost:$PORT" |
         Set-Content (Join-Path $adminDir ".env.local") -Encoding UTF8
 
     Write-Host "[admin] Starting admin panel at http://localhost:3000" -ForegroundColor Green
     Push-Location $adminDir
-    if ($Prod) {
-        if (-not (Test-Path ".next")) {
-            Write-Host "[admin] Building..." -ForegroundColor Cyan
-            & $PKG run build
+    try {
+        if ($Prod) {
+            if (-not (Test-Path ".next")) {
+                Write-Host "[admin] Building..." -ForegroundColor Cyan
+                & $PKG run build
+            }
+            & $PKG run start
+        } else {
+            & $PKG run dev
         }
-        & $PKG run start
-    } else {
-        & $PKG run dev
+    } finally {
+        Pop-Location
     }
-    Pop-Location
 }
 
-# ── Start modes ───────────────────────────────────────────────────────────────
+function Start-ServerJob {
+    param(
+        [string]$Binary,
+        [string]$ConfigPath
+    )
+
+    return Start-Job -ScriptBlock {
+        param($b, $c)
+        & $b -config $c
+    } -ArgumentList $Binary, $ConfigPath
+}
+
+if (-not $AdminOnly) {
+    $existing = Get-PortProcess -Port ([int]$PORT)
+    if ($existing) {
+        Write-Host ""
+        Write-Host "[run] Port $PORT is already in use by: $($existing.Name) (PID $($existing.Id))" -ForegroundColor Yellow
+        Write-Host "  [1] Stop the existing process and restart (default)"
+        Write-Host "  [2] Leave it running (skip server start)"
+        Write-Host "  [3] Exit"
+        Write-Host ""
+        $choice = (Read-Host "  Choice [1]").Trim()
+        if (-not $choice) {
+            $choice = "1"
+        }
+
+        if ($choice -eq "3") {
+            exit 0
+        }
+
+        if ($choice -eq "2") {
+            Write-Host "[run] Server already running at http://localhost:$PORT" -ForegroundColor Green
+            if ($WithAdmin -or $AdminProd) {
+                Start-AdminPanel -Prod:$AdminProd
+            }
+            exit 0
+        }
+
+        Write-Host "[run] Stopping PID $($existing.Id)..." -ForegroundColor Cyan
+        Stop-Process -Id $existing.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 800
+        Write-Host "[run] Stopped." -ForegroundColor Green
+    }
+}
+
 if ($AdminOnly) {
     Start-AdminPanel -Prod:$AdminProd
     exit 0
 }
 
+$bin = Ensure-Binaries
+
 if ($Dev) {
     if (Get-Command air -ErrorAction SilentlyContinue) {
         Write-Host "[run] Starting in DEV mode (air hot-reload)..." -ForegroundColor Yellow
         if ($WithAdmin -or $AdminProd) {
-            # Start admin in background job, server in foreground.
             $adminJob = Start-Job -ScriptBlock {
-                param($r, $pkg, $p)
-                Set-Location (Join-Path $r "admin")
-                "NEXT_PUBLIC_API_URL=http://localhost:$p" | Set-Content ".env.local"
-                & $pkg run dev
-            } -ArgumentList $ROOT, $PKG, $PORT
+                param($root, $pkg, $port, $prod)
+                if (-not $pkg) {
+                    return
+                }
+
+                Set-Location (Join-Path $root "admin")
+                "NEXT_PUBLIC_API_URL=http://localhost:$port" | Set-Content ".env.local" -Encoding UTF8
+                if ($prod) {
+                    if (-not (Test-Path ".next")) {
+                        & $pkg run build
+                    }
+                    & $pkg run start
+                } else {
+                    & $pkg run dev
+                }
+            } -ArgumentList $ROOT, $PKG, $PORT, [bool]$AdminProd
             Write-Host "[admin] Admin panel starting (job $($adminJob.Id))..." -ForegroundColor Green
         }
+
         Push-Location $ROOT
-        air
-        Pop-Location
+        try {
+            air
+        } finally {
+            Pop-Location
+        }
     } else {
         Write-Warning "[run] 'air' not found -- running normally"
         & $bin -config $Config
@@ -129,45 +252,42 @@ if ($Dev) {
     exit 0
 }
 
-# Normal mode: server in background, admin in foreground (or vice versa).
 if ($WithAdmin -or $AdminProd) {
     Write-Host "[run] Starting VoidDB server in background..." -ForegroundColor Cyan
-    $srvJob = Start-Job -ScriptBlock {
-        param($b, $c)
-        & $b -config $c
-    } -ArgumentList $bin, $Config
+    $srvJob = Start-ServerJob -Binary $bin -ConfigPath $Config
     Write-Host "[run] Server starting (job $($srvJob.Id))..." -ForegroundColor Green
     Write-Host "[run] API: http://localhost:$PORT" -ForegroundColor Cyan
     Start-Sleep -Seconds 1
     Start-AdminPanel -Prod:$AdminProd
-} else {
-    # Interactive: ask if user wants admin panel.
-    if ($PKG -and -not $env:VOID_NO_PROMPT) {
-        Write-Host ""
-        Write-Host "[run] VoidDB server starting at http://localhost:$PORT" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "  Also start admin panel?" -ForegroundColor White
-        Write-Host "    [1] No - server only (default)"
-        Write-Host "    [2] Yes - dev mode   (hot-reload, requires Bun/Node)"
-        Write-Host "    [3] Yes - production (requires built assets)"
-        Write-Host ""
-        $choice = (Read-Host "  Choice [1]").Trim()
-        if ($choice -eq "2") {
-            $srvJob = Start-Job -ScriptBlock { param($b, $c); & $b -config $c } -ArgumentList $bin, $Config
-            Write-Host "[run] Server job $($srvJob.Id) started" -ForegroundColor Green
-            Start-Sleep 1
-            Start-AdminPanel -Prod:$false
-        } elseif ($choice -eq "3") {
-            $srvJob = Start-Job -ScriptBlock { param($b, $c); & $b -config $c } -ArgumentList $bin, $Config
-            Write-Host "[run] Server job $($srvJob.Id) started" -ForegroundColor Green
-            Start-Sleep 1
-            Start-AdminPanel -Prod:$true
-        } else {
-            Write-Host "[run] Starting VoidDB..." -ForegroundColor Cyan
-            & $bin -config $Config
-        }
+    exit 0
+}
+
+if ($PKG -and -not $env:VOID_NO_PROMPT) {
+    Write-Host ""
+    Write-Host "[run] VoidDB server starting at http://localhost:$PORT" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  Also start admin panel?" -ForegroundColor White
+    Write-Host "    [1] No - server only (default)"
+    Write-Host "    [2] Yes - dev mode"
+    Write-Host "    [3] Yes - production"
+    Write-Host ""
+    $choice = (Read-Host "  Choice [1]").Trim()
+
+    if ($choice -eq "2") {
+        $srvJob = Start-ServerJob -Binary $bin -ConfigPath $Config
+        Write-Host "[run] Server job $($srvJob.Id) started" -ForegroundColor Green
+        Start-Sleep -Seconds 1
+        Start-AdminPanel -Prod:$false
+    } elseif ($choice -eq "3") {
+        $srvJob = Start-ServerJob -Binary $bin -ConfigPath $Config
+        Write-Host "[run] Server job $($srvJob.Id) started" -ForegroundColor Green
+        Start-Sleep -Seconds 1
+        Start-AdminPanel -Prod:$true
     } else {
         Write-Host "[run] Starting VoidDB..." -ForegroundColor Cyan
         & $bin -config $Config
     }
+} else {
+    Write-Host "[run] Starting VoidDB..." -ForegroundColor Cyan
+    & $bin -config $Config
 }

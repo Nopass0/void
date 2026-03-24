@@ -1,75 +1,192 @@
 /**
- * @fileoverview DocumentTable – displays a paginated table of documents
- * fetched from the active database / collection.
- * Supports inline delete, row click-to-edit, and column auto-detection.
+ * @fileoverview DocumentTable – a professional data table for documents.
+ * Features: column sorting, row selection, inline editing, improved pagination,
+ * column type indicators, and expandable objects.
  */
 
 "use client";
 
-import React, { useEffect, useCallback, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useEffect, useCallback, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Trash2,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Loader2,
   FileText,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  Check,
+  X,
+  Pencil,
+  Copy,
+  ClipboardCopy,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn, truncate, formatNumber } from "@/lib/utils";
 import { useStore } from "@/store";
 import * as api from "@/lib/api";
 import type { Document } from "@/lib/api";
+import { ContextMenu, type ContextMenuEntry } from "@/components/ui/context-menu";
 
 // ── Cell renderer ─────────────────────────────────────────────────────────────
 
 function CellValue({ value }: { value: unknown }) {
+  const [expanded, setExpanded] = useState(false);
+
   if (value === null || value === undefined) {
     return <span className="text-muted-foreground italic text-xs">null</span>;
   }
   if (typeof value === "boolean") {
     return (
-      <span className={cn("text-xs font-mono", value ? "text-green-400" : "text-red-400")}>
+      <span className={cn("text-xs font-mono", value ? "text-neon-500" : "text-red-400")}>
         {String(value)}
       </span>
     );
   }
   if (typeof value === "number") {
-    return <span className="text-xs font-mono text-blue-300">{value}</span>;
+    return <span className="text-xs font-mono text-blue-400">{value}</span>;
   }
   if (typeof value === "object") {
+    const json = JSON.stringify(value, null, 2);
+    const short = JSON.stringify(value);
+    if (short.length <= 50) {
+      return <span className="text-xs font-mono text-amber-400">{short}</span>;
+    }
     return (
-      <span className="text-xs font-mono text-amber-300">
-        {truncate(JSON.stringify(value), 40)}
+      <span className="text-xs font-mono text-amber-400">
+        {expanded ? (
+          <span className="block max-w-[32rem] whitespace-pre-wrap break-words cursor-pointer" onClick={() => setExpanded(false)}>
+            {json}
+          </span>
+        ) : (
+          <span className="block max-w-[26rem] truncate cursor-pointer hover:text-amber-300" onClick={() => setExpanded(true)}>
+            {truncate(short, 50)}
+          </span>
+        )}
       </span>
     );
   }
   return (
-    <span className="text-xs text-foreground">{truncate(String(value), 60)}</span>
+    <span className="block max-w-[26rem] text-xs text-foreground whitespace-pre-wrap break-words">{String(value)}</span>
+  );
+}
+
+// ── Inline edit cell ──────────────────────────────────────────────────────────
+
+interface InlineCellProps {
+  value: unknown;
+  field: string;
+  docId: string;
+  db: string;
+  col: string;
+  onSaved: () => void;
+}
+
+function InlineCell({ value, field, docId, db, col, onSaved }: InlineCellProps) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+
+  const startEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (field === "_id") return;
+    const val = typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+    setText(val);
+    setEditing(true);
+  };
+
+  const cancel = () => setEditing(false);
+
+  const save = async () => {
+    try {
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); } catch { parsed = text; }
+      await api.patchDocument(db, col, docId, { [field]: parsed });
+      toast.success("Cell updated");
+      setEditing(false);
+      onSaved();
+    } catch {
+      toast.error("Failed to update");
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); }
+    if (e.key === "Escape") cancel();
+  };
+
+  if (editing) {
+    // Determine input type from schema
+    const schemaField = useStore.getState().activeSchema?.fields?.find(f => f.name === field);
+    const inputType = schemaField?.type === "datetime" ? "datetime-local" : 
+                      schemaField?.type === "boolean" ? "checkbox" : "text";
+
+    return (
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        {inputType === "checkbox" ? (
+          <input
+            autoFocus
+            type="checkbox"
+            checked={text === "true"}
+            onChange={(e) => setText(String(e.target.checked))}
+            onKeyDown={handleKeyDown}
+            className="w-4 h-4 rounded border-border accent-neon-500"
+          />
+        ) : (
+          <input
+            autoFocus
+            type={inputType}
+            value={inputType === "datetime-local" && text.length > 16 ? text.slice(0, 16) : text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={cancel}
+            className="cell-edit-input"
+          />
+        )}
+        <button onMouseDown={save} className="text-neon-500 hover:text-neon-400 shrink-0">
+          <Check className="w-3 h-3" />
+        </button>
+        <button onMouseDown={cancel} className="text-muted-foreground hover:text-foreground shrink-0">
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(field !== "_id" && "cell-editable")}
+      onDoubleClick={startEdit}
+    >
+      <CellValue value={value} />
+    </div>
   );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface DocumentTableProps {
-  /** Called when a row is clicked to open the document editor. */
   onEditDoc?: (doc: Document) => void;
 }
 
-/**
- * DocumentTable fetches and renders documents for the active collection.
- */
+const PAGE_SIZES = [10, 25, 50, 100];
+
 export function DocumentTable({ onEditDoc }: DocumentTableProps) {
   const {
-    activeDb, activeCol,
+    activeDb, activeCol, activeSchema,
     documents, docCount, dataLoading,
     setDocuments, setDataLoading,
     queryText,
-    page, setPage, pageSize,
+    page, setPage, pageSize, setPageSize,
+    sortBy, setSortBy,
+    selectedIds, toggleSelectedId, clearSelectedIds, setSelectedIds,
   } = useStore();
 
-  /** Fetches the current page of documents using the stored query. */
   const fetchDocs = useCallback(async () => {
     if (!activeDb || !activeCol) return;
     setDataLoading(true);
@@ -83,18 +200,21 @@ export function DocumentTable({ onEditDoc }: DocumentTableProps) {
       }
       spec.limit = pageSize;
       spec.skip = page * pageSize;
+      if (sortBy) {
+        spec.order_by = [{ field: sortBy.field, dir: sortBy.dir }];
+      }
       const result = await api.queryDocuments(activeDb, activeCol, spec);
       setDocuments(result.results, result.count);
-    } catch (err) {
+      clearSelectedIds();
+    } catch {
       toast.error("Failed to fetch documents");
     } finally {
       setDataLoading(false);
     }
-  }, [activeDb, activeCol, queryText, page, pageSize, setDocuments, setDataLoading]);
+  }, [activeDb, activeCol, queryText, page, pageSize, sortBy, setDocuments, setDataLoading, clearSelectedIds]);
 
-  useEffect(() => { fetchDocs(); }, [activeDb, activeCol, page]);
+  useEffect(() => { fetchDocs(); }, [activeDb, activeCol, page, pageSize, sortBy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Deletes a document and refreshes the list. */
   const handleDelete = async (doc: Document, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!activeDb || !activeCol) return;
@@ -108,19 +228,68 @@ export function DocumentTable({ onEditDoc }: DocumentTableProps) {
     }
   };
 
-  /** Derive column headers from all documents (union of field names). */
+  const handleBulkDelete = async () => {
+    if (!activeDb || !activeCol || selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} document(s)?`)) return;
+    try {
+      const ids = Array.from(selectedIds);
+      for (let i = 0; i < ids.length; i++) {
+        await api.deleteDocument(activeDb, activeCol, ids[i]);
+      }
+      toast.success(`${selectedIds.size} document(s) deleted`);
+      clearSelectedIds();
+      fetchDocs();
+    } catch {
+      toast.error("Failed to delete some documents");
+    }
+  };
+
   const columns = useMemo<string[]>(() => {
+    if (activeSchema && activeSchema.fields && activeSchema.fields.length > 0) {
+      const cols = ["_id"];
+      activeSchema.fields.forEach(f => {
+        if (f.name !== "_id") cols.push(f.name);
+      });
+      // Include fields present in documents but not in schema
+      documents.forEach((d) => Object.keys(d).forEach((k) => {
+        if (!cols.includes(k)) cols.push(k);
+      }));
+      return cols.slice(0, 15);
+    }
     const cols = new Set<string>(["_id"]);
     documents.forEach((d) => Object.keys(d).forEach((k) => cols.add(k)));
     const arr = Array.from(cols);
-    return arr.slice(0, 10); // cap at 10 visible columns
-  }, [documents]);
+    return arr.slice(0, 15);
+  }, [documents, activeSchema]);
 
   const totalPages = Math.ceil(docCount / pageSize);
+  const startRow = page * pageSize + 1;
+  const endRow = Math.min((page + 1) * pageSize, docCount);
+
+  const toggleSort = (field: string) => {
+    if (!sortBy || sortBy.field !== field) {
+      setSortBy({ field, dir: "asc" });
+    } else if (sortBy.dir === "asc") {
+      setSortBy({ field, dir: "desc" });
+    } else {
+      setSortBy(null);
+    }
+    setPage(0);
+  };
+
+  const allSelected = documents.length > 0 && documents.every((d) => selectedIds.has(d._id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      clearSelectedIds();
+    } else {
+      setSelectedIds(new Set(documents.map((d) => d._id)));
+    }
+  };
 
   if (!activeDb || !activeCol) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3">
+      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3 py-20">
         <FileText className="w-12 h-12 opacity-20" />
         <p className="text-sm">Select a collection from the sidebar</p>
       </div>
@@ -131,72 +300,147 @@ export function DocumentTable({ onEditDoc }: DocumentTableProps) {
     <div className="flex flex-col h-full gap-3">
       {/* Toolbar */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">
             {formatNumber(docCount)} document{docCount !== 1 ? "s" : ""}
           </span>
+          {selectedIds.size > 0 && (
+            <button onClick={handleBulkDelete} className="btn-danger text-xs py-1 px-2">
+              <Trash2 className="w-3 h-3" />
+              Delete {selectedIds.size} selected
+            </button>
+          )}
         </div>
         <button
           onClick={fetchDocs}
           disabled={dataLoading}
-          className="text-muted-foreground hover:text-void-400 transition-colors"
+          className="btn-ghost"
         >
-          <RefreshCw className={cn("w-4 h-4", dataLoading && "animate-spin")} />
+          <RefreshCw className={cn("w-3.5 h-3.5", dataLoading && "animate-spin")} />
         </button>
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto rounded-xl border border-void-500/20 glass">
+      <div className="flex-1 overflow-auto rounded-lg border border-border bg-surface-2">
         {dataLoading ? (
           <div className="flex items-center justify-center h-40">
-            <Loader2 className="w-6 h-6 animate-spin text-void-400" />
+            <Loader2 className="w-5 h-5 animate-spin text-neon-500" />
           </div>
-        ) : documents.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
-            No documents found
+        ) : documents.length === 0 && columns.length <= 1 ? (
+          <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+            <FileText className="w-8 h-8 opacity-20" />
+            <p className="text-sm">No documents found</p>
+            <p className="text-xs">Try changing your query or inserting documents</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="data-table">
             <thead>
-              <tr className="border-b border-void-500/20">
+              <tr>
+                {/* Select all checkbox */}
+                <th className="w-10 text-center !px-2">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    className="w-3.5 h-3.5 rounded border-border accent-neon-500 cursor-pointer"
+                  />
+                </th>
                 {columns.map((col) => (
                   <th
                     key={col}
-                    className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap"
+                    className="sortable group"
+                    onClick={() => toggleSort(col)}
                   >
-                    {col}
+                    <span className="inline-flex items-center gap-1.5">
+                      {col}
+                      {sortBy?.field === col ? (
+                        sortBy.dir === "asc" ? (
+                          <ArrowUp className="w-3 h-3 text-neon-500" />
+                        ) : (
+                          <ArrowDown className="w-3 h-3 text-neon-500" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-40 transition-opacity" />
+                      )}
+                    </span>
                   </th>
                 ))}
-                <th className="px-3 py-2.5 w-10" />
+                <th className="w-6 cursor-pointer hover:bg-surface-3 transition-colors" title="Add Column" onClick={() => {
+                  const name = prompt("Column Name");
+                  if (!name) return;
+                  const type = prompt("Type (string, number, boolean, datetime)", "string") as any;
+                  if (!type) return;
+                  if (activeDb && activeCol && activeSchema) {
+                    const next = { ...activeSchema };
+                    next.fields = [...(next.fields || []), { name, type }];
+                    useStore.getState().setActiveSchema(next);
+                    api.setSchema(activeDb, activeCol, next).then(() => {
+                      toast.success(`Column ${name} added`);
+                    }).catch(() => toast.error("Failed to add column"));
+                  }
+                }}>
+                  <div className="flex items-center justify-center w-full h-full text-muted-foreground hover:text-neon-500">
+                    <Plus className="w-4 h-4" />
+                  </div>
+                </th>
+                <th className="w-10" />
               </tr>
             </thead>
             <tbody>
               <AnimatePresence>
-                {documents.map((doc, i) => (
-                  <motion.tr
-                    key={doc._id}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ delay: i * 0.02 }}
-                    onClick={() => onEditDoc?.(doc)}
-                    className="border-b border-void-500/10 hover:bg-void-600/10 cursor-pointer transition-colors group"
-                  >
-                    {columns.map((col) => (
-                      <td key={col} className="px-3 py-2 max-w-[200px] truncate">
-                        <CellValue value={doc[col]} />
+                {documents.map((doc, i) => {
+                  const rowMenuItems: ContextMenuEntry[] = [
+                    { label: "Edit document", icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => onEditDoc?.(doc), shortcut: "Enter" },
+                    { label: "Copy JSON", icon: <Copy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(JSON.stringify(doc, null, 2)); toast.success("JSON copied"); } },
+                    { label: "Copy ID", icon: <ClipboardCopy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(doc._id); toast.success("ID copied"); } },
+                    { separator: true },
+                    { label: "Delete", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => { if (activeDb && activeCol && confirm(`Delete ${doc._id}?`)) { api.deleteDocument(activeDb, activeCol, doc._id).then(() => { toast.success("Deleted"); fetchDocs(); }); } }, shortcut: "Del" },
+                  ];
+                  return (
+                  <ContextMenu key={doc._id} items={rowMenuItems} as="tr">
+                    <motion.tr
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ delay: i * 0.01 }}
+                      onClick={() => onEditDoc?.(doc)}
+                      className={cn(
+                        "cursor-pointer group",
+                        selectedIds.has(doc._id) && "selected"
+                      )}
+                    >
+                      <td className="!px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(doc._id)}
+                          onChange={() => toggleSelectedId(doc._id)}
+                          className="w-3.5 h-3.5 rounded border-border accent-neon-500 cursor-pointer"
+                        />
                       </td>
-                    ))}
-                    <td className="px-3 py-2">
-                      <button
-                        onClick={(e) => handleDelete(doc, e)}
-                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </motion.tr>
-                ))}
+                      {columns.map((col) => (
+                        <td key={col} className="min-w-[180px] max-w-[420px] align-top">
+                          <InlineCell
+                            value={doc[col]}
+                            field={col}
+                            docId={doc._id}
+                            db={activeDb}
+                            col={activeCol}
+                            onSaved={fetchDocs}
+                          />
+                        </td>
+                      ))}
+                      <td className="!px-2">
+                        <button
+                          onClick={(e) => handleDelete(doc, e)}
+                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </motion.tr>
+                  </ContextMenu>
+                  );
+                })}
               </AnimatePresence>
             </tbody>
           </table>
@@ -204,27 +448,55 @@ export function DocumentTable({ onEditDoc }: DocumentTableProps) {
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 text-sm">
+      <div className="pagination-bar">
+        <div className="flex items-center gap-3">
+          <span className="text-xs">
+            Rows {startRow}–{endRow} of {formatNumber(docCount)}
+          </span>
+          <select
+            value={pageSize}
+            onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
+            className="select-field text-xs !py-1 !px-2 !w-auto"
+          >
+            {PAGE_SIZES.map((s) => (
+              <option key={s} value={s}>{s} / page</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setPage(0)}
+            disabled={page === 0}
+            className="btn-ghost !p-1 disabled:opacity-30"
+          >
+            <ChevronsLeft className="w-4 h-4" />
+          </button>
           <button
             onClick={() => setPage(Math.max(0, page - 1))}
             disabled={page === 0}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+            className="btn-ghost !p-1 disabled:opacity-30"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-muted-foreground">
-            Page {page + 1} of {totalPages}
+          <span className="text-xs px-2 font-medium">
+            {page + 1} / {totalPages || 1}
           </span>
           <button
             onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
             disabled={page >= totalPages - 1}
-            className="text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
+            className="btn-ghost !p-1 disabled:opacity-30"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
+          <button
+            onClick={() => setPage(totalPages - 1)}
+            disabled={page >= totalPages - 1}
+            className="btn-ghost !p-1 disabled:opacity-30"
+          >
+            <ChevronsRight className="w-4 h-4" />
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

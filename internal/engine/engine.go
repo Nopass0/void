@@ -18,9 +18,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/voiddb/void/internal/engine/cache"
 	"github.com/voiddb/void/internal/engine/storage"
@@ -76,10 +78,11 @@ type Engine struct {
 	cache    *cache.Cache
 	seqNum   atomic.Uint64
 
-	flushCh chan struct{}
-	closeCh chan struct{}
-	wg      sync.WaitGroup
-	closed  atomic.Bool
+	flushCh    chan struct{}
+	closeCh    chan struct{}
+	wg         sync.WaitGroup
+	closed     atomic.Bool
+	compacting atomic.Bool
 }
 
 // Open initialises the Engine, replaying the WAL if the process was previously
@@ -111,7 +114,8 @@ func Open(opts Options) (*Engine, error) {
 	}
 
 	// Load existing segments from disk.
-	if err := e.loadSegments(); err != nil {
+	maxSegmentSeq, err := e.loadSegments()
+	if err != nil {
 		return nil, fmt.Errorf("engine: load segments: %w", err)
 	}
 
@@ -119,6 +123,10 @@ func Open(opts Options) (*Engine, error) {
 	if err := e.replayWAL(); err != nil {
 		return nil, fmt.Errorf("engine: replay wal: %w", err)
 	}
+	if walSeq := e.wal.SeqNum(); walSeq > maxSegmentSeq {
+		maxSegmentSeq = walSeq
+	}
+	e.seqNum.Store(maxSegmentSeq)
 
 	// Start background goroutines.
 	e.wg.Add(1)
@@ -318,13 +326,54 @@ func (e *Engine) Stats() map[string]interface{} {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return map[string]interface{}{
-		"memtable_size":   e.memtable.MemSize(),
-		"memtable_count":  e.memtable.Count(),
-		"segments":        len(e.segments),
-		"cache_len":       e.cache.Len(),
-		"cache_used":      e.cache.UsedBytes(),
-		"wal_seq":         e.wal.SeqNum(),
+		"memtable_size":  e.memtable.MemSize(),
+		"memtable_count": e.memtable.Count(),
+		"segments":       len(e.segments),
+		"cache_len":      e.cache.Len(),
+		"cache_used":     e.cache.UsedBytes(),
+		"wal_seq":        e.wal.SeqNum(),
 	}
+}
+
+// Namespaces returns all namespaces currently visible in memtables and segments.
+// It is used to reconstruct database metadata after process restarts.
+func (e *Engine) Namespaces() []string {
+	seen := make(map[string]struct{})
+
+	collectKey := func(key []byte) {
+		parts := strings.SplitN(string(key), ":", 2)
+		if len(parts) != 2 || parts[0] == "" {
+			return
+		}
+		seen[parts[0]] = struct{}{}
+	}
+
+	collectSkipList := func(sl *storage.SkipList) {
+		if sl == nil {
+			return
+		}
+		sl.Scan(nil, nil, func(key, _ []byte, _ bool) bool {
+			collectKey(key)
+			return true
+		})
+	}
+
+	e.mu.RLock()
+	collectSkipList(e.memtable)
+	collectSkipList(e.imm)
+	for _, seg := range e.segments {
+		for _, entry := range seg.Entries() {
+			collectKey(entry.Key)
+		}
+	}
+	e.mu.RUnlock()
+
+	namespaces := make([]string, 0, len(seen))
+	for ns := range seen {
+		namespaces = append(namespaces, ns)
+	}
+	sort.Strings(namespaces)
+	return namespaces
 }
 
 // --- internal ----------------------------------------------------------------
@@ -339,15 +388,20 @@ func makeKey(namespace string, key []byte) []byte {
 }
 
 // loadSegments scans DataDir for *.seg files and opens them.
-func (e *Engine) loadSegments() error {
+func (e *Engine) loadSegments() (uint64, error) {
 	entries, err := os.ReadDir(e.opts.DataDir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var paths []string
+	var maxSeq uint64
 	for _, de := range entries {
 		if !de.IsDir() && strings.HasSuffix(de.Name(), ".seg") {
 			paths = append(paths, filepath.Join(e.opts.DataDir, de.Name()))
+			name := strings.TrimSuffix(de.Name(), ".seg")
+			if seq, err := strconv.ParseUint(name, 10, 64); err == nil && seq > maxSeq {
+				maxSeq = seq
+			}
 		}
 	}
 	// Sort by filename (seq number is encoded there) newest-first.
@@ -356,11 +410,11 @@ func (e *Engine) loadSegments() error {
 	for _, p := range paths {
 		seg, err := storage.OpenSegment(p)
 		if err != nil {
-			return fmt.Errorf("engine: open segment %s: %w", p, err)
+			return 0, fmt.Errorf("engine: open segment %s: %w", p, err)
 		}
 		e.segments = append(e.segments, seg)
 	}
-	return nil
+	return maxSeq, nil
 }
 
 // replayWAL reads the WAL and rebuilds the memtable.
@@ -410,8 +464,8 @@ func (e *Engine) flushMemtable(sl *storage.SkipList) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	seqNum := e.wal.SeqNum()
-	path := filepath.Join(e.opts.DataDir, fmt.Sprintf("%020d.seg", seqNum))
+	segmentSeq := e.nextSegmentSeq()
+	path := filepath.Join(e.opts.DataDir, fmt.Sprintf("%020d.seg", segmentSeq))
 	w, err := storage.NewSegmentWriter(path, len(entries), e.opts.BloomFPRate)
 	if err != nil {
 		return err
@@ -423,7 +477,7 @@ func (e *Engine) flushMemtable(sl *storage.SkipList) error {
 	if err != nil {
 		return err
 	}
-	seg.SetSeqNum(seqNum)
+	seg.SetSeqNum(segmentSeq)
 	seg.SetLevel(0)
 
 	e.mu.Lock()
@@ -431,29 +485,37 @@ func (e *Engine) flushMemtable(sl *storage.SkipList) error {
 	e.mu.Unlock()
 
 	// Write checkpoint to WAL so we can truncate earlier records.
-	_ = e.wal.Checkpoint(seqNum)
+	_ = e.wal.Checkpoint(e.wal.SeqNum())
 	return nil
 }
 
 // compactionLoop merges small L0 segments into larger L1+ segments.
+// It sleeps between checks to avoid spinning the CPU.
 func (e *Engine) compactionLoop() {
 	defer e.wg.Done()
+	// Check for compaction every 500 ms.  Using a ticker rather than a
+	// bare default-select prevents the goroutine from consuming a full CPU
+	// core when there is nothing to compact.
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-e.closeCh:
 			return
-		default:
-			e.mu.Lock()
+		case <-ticker.C:
+			e.mu.RLock()
 			l0count := 0
 			for _, s := range e.segments {
 				if s.Level() == 0 {
 					l0count++
 				}
 			}
-			e.mu.Unlock()
-
-			if l0count >= 4 {
-				_ = e.compact()
+			e.mu.RUnlock()
+			if l0count >= 4 && e.compacting.CompareAndSwap(false, true) {
+				func() {
+					defer e.compacting.Store(false)
+					_ = e.compact()
+				}()
 			}
 		}
 	}
@@ -492,8 +554,8 @@ func (e *Engine) compact() error {
 	}
 	sort.Strings(keys)
 
-	seqNum := e.wal.SeqNum()
-	path := filepath.Join(e.opts.DataDir, fmt.Sprintf("%020d.seg", seqNum))
+	segmentSeq := e.nextSegmentSeq()
+	path := filepath.Join(e.opts.DataDir, fmt.Sprintf("%020d.seg", segmentSeq))
 	w, err := storage.NewSegmentWriter(path, len(merged), e.opts.BloomFPRate)
 	if err != nil {
 		return err
@@ -507,15 +569,30 @@ func (e *Engine) compact() error {
 		return err
 	}
 	newSeg.SetLevel(1)
-	newSeg.SetSeqNum(seqNum)
+	newSeg.SetSeqNum(segmentSeq)
 
-	// Replace L0 segments with the new L1 segment.
+	// Replace only the segments that were compacted. Newer L0 segments that were
+	// flushed while compaction was running must stay ahead of the compacted output.
+	remove := make(map[string]struct{}, len(l0))
+	for _, s := range l0 {
+		remove[s.Path()] = struct{}{}
+	}
+
 	e.mu.Lock()
-	newSegments := []*storage.Segment{newSeg}
+	newSegments := make([]*storage.Segment, 0, len(e.segments)-len(l0)+1)
+	inserted := false
 	for _, s := range e.segments {
-		if s.Level() != 0 {
-			newSegments = append(newSegments, s)
+		if _, ok := remove[s.Path()]; ok {
+			if !inserted {
+				newSegments = append(newSegments, newSeg)
+				inserted = true
+			}
+			continue
 		}
+		newSegments = append(newSegments, s)
+	}
+	if !inserted {
+		newSegments = append([]*storage.Segment{newSeg}, newSegments...)
 	}
 	e.segments = newSegments
 	e.mu.Unlock()
@@ -527,3 +604,6 @@ func (e *Engine) compact() error {
 	return nil
 }
 
+func (e *Engine) nextSegmentSeq() uint64 {
+	return e.seqNum.Add(1)
+}

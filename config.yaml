@@ -41,7 +41,7 @@ blob:
 log:
   level: "info"       # debug | info | warn | error
   format: "console"   # console | json
-  output_path: "stdout"
+  output_path: "./logs/voiddb.log"
 
 admin:
   enabled: true

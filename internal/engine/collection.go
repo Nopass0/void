@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -14,17 +15,61 @@ import (
 	"github.com/voiddb/void/internal/engine/types"
 )
 
+const (
+	metaDatabasePrefix   = "db:"
+	metaCollectionPrefix = "col:"
+)
+
 // Collection is a named set of Documents stored in the Engine.
 // It is safe for concurrent use.
 type Collection struct {
-	mu   sync.RWMutex
-	name string
-	eng  *Engine
+	mu     sync.RWMutex
+	name   string
+	eng    *Engine
+	schema *Schema
+	hub    *Hub
 }
 
 // newCollection returns a Collection backed by eng with the given name.
-func newCollection(eng *Engine, name string) *Collection {
-	return &Collection{name: name, eng: eng}
+func newCollection(eng *Engine, name string, hub *Hub) *Collection {
+	c := &Collection{name: name, eng: eng, hub: hub}
+	c.loadSchema()
+	return c
+}
+
+// loadSchema reads the schema from the _meta namespace.
+func (c *Collection) loadSchema() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	data, found, err := c.eng.Get("_meta", []byte("schema:"+c.name))
+	if err == nil && found {
+		s, _ := unmarshalSchema(data)
+		c.schema = s
+	} else {
+		c.schema = NewDefaultSchema()
+	}
+}
+
+// Schema returns the collection's current schema.
+func (c *Collection) Schema() *Schema {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.schema
+}
+
+// SetSchema saves and applies a new schema to the collection.
+func (c *Collection) SetSchema(s *Schema) error {
+	data, err := marshalSchema(s)
+	if err != nil {
+		return err
+	}
+	if err := c.eng.Put("_meta", []byte("schema:"+c.name), data); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.schema = s
+	c.mu.Unlock()
+	return nil
 }
 
 // Name returns the collection name.
@@ -33,9 +78,19 @@ func (c *Collection) Name() string { return c.name }
 // Insert creates a new Document, generating a UUID if ID is empty.
 // Returns the assigned document ID.
 func (c *Collection) Insert(doc *types.Document) (string, error) {
+	c.mu.RLock()
+	s := c.schema
+	c.mu.RUnlock()
+	
+	if err := s.Apply(doc, false); err != nil {
+		return "", fmt.Errorf("collection %s: schema validate: %w", c.name, err)
+	}
+	
+	// Ensure ID is set (Apply might have generated it)
 	if doc.ID == "" {
 		doc.ID = uuid.New().String()
 	}
+	
 	data, err := marshalDoc(doc)
 	if err != nil {
 		return "", fmt.Errorf("collection %s: marshal: %w", c.name, err)
@@ -43,23 +98,67 @@ func (c *Collection) Insert(doc *types.Document) (string, error) {
 	if err := c.eng.Put(c.name, []byte(doc.ID), data); err != nil {
 		return "", fmt.Errorf("collection %s: put: %w", c.name, err)
 	}
+	
+	if c.hub != nil {
+		parts := strings.Split(c.name, "/")
+		dbName, colName := parts[0], parts[1]
+		c.hub.Broadcast(Event{
+			Type:       EventInsert,
+			Database:   dbName,
+			Collection: colName,
+			DocID:      doc.ID,
+			Doc:        doc,
+		})
+	}
+	
 	return doc.ID, nil
 }
 
 // Update replaces the document with the given ID.
 // Returns ErrNotFound if the ID does not exist.
 func (c *Collection) Update(id string, doc *types.Document) error {
+	c.mu.RLock()
+	s := c.schema
+	c.mu.RUnlock()
+
+	if err := s.Apply(doc, true); err != nil {
+		return fmt.Errorf("collection %s: schema validate: %w", c.name, err)
+	}
+
 	doc.ID = id
 	data, err := marshalDoc(doc)
 	if err != nil {
 		return fmt.Errorf("collection %s: marshal: %w", c.name, err)
 	}
-	return c.eng.Put(c.name, []byte(id), data)
+	err = c.eng.Put(c.name, []byte(id), data)
+	if err == nil && c.hub != nil {
+		parts := strings.Split(c.name, "/")
+		dbName, colName := parts[0], parts[1]
+		c.hub.Broadcast(Event{
+			Type:       EventUpdate,
+			Database:   dbName,
+			Collection: colName,
+			DocID:      id,
+			Doc:        doc,
+		})
+	}
+	return err
 }
 
 // Delete removes the document with the given ID.
 func (c *Collection) Delete(id string) error {
-	return c.eng.Delete(c.name, []byte(id))
+	err := c.eng.Delete(c.name, []byte(id))
+	if err == nil && c.hub != nil {
+		parts := strings.Split(c.name, "/")
+		dbName, colName := parts[0], parts[1]
+		c.hub.Broadcast(Event{
+			Type:       EventDelete,
+			Database:   dbName,
+			Collection: colName,
+			DocID:      id,
+		})
+	}
+	return err
 }
 
 // FindByID retrieves a single document by its primary key.
@@ -94,6 +193,62 @@ func (c *Collection) Find(q *Query) ([]*types.Document, error) {
 	if q != nil {
 		results = q.applySort(results)
 		results = q.applyPagination(results)
+		
+		// Resolve Joins (Eager loading)
+		if len(q.Joins()) > 0 {
+			dbName := strings.Split(c.name, "/")[0]
+			for _, join := range q.Joins() {
+				targetNs := dbName + "/" + join.TargetCol
+				for _, doc := range results {
+					var localVal types.Value
+					if join.LocalKey == "_id" {
+						localVal = types.String(doc.ID)
+					} else {
+						localVal = doc.Get(join.LocalKey)
+					}
+					
+					var joinedDocs []types.Value
+					_ = c.eng.Scan(targetNs, func(k, v []byte) bool {
+						tdoc, err := unmarshalDoc(v)
+						if err != nil {
+							return true
+						}
+						
+						var foreignVal types.Value
+						if join.ForeignKey == "_id" {
+							foreignVal = types.String(tdoc.ID)
+						} else {
+							foreignVal = tdoc.Get(join.ForeignKey)
+						}
+						
+						if types.Equal(localVal, foreignVal) {
+							// Embed the whole document as an Object
+							m := make(map[string]types.Value, len(tdoc.Fields)+1)
+							m["_id"] = types.String(tdoc.ID)
+							for tk, tv := range tdoc.Fields {
+								m[tk] = tv
+							}
+							joinedDocs = append(joinedDocs, types.Object(m))
+							
+							if join.Relation == "one_to_one" || join.Relation == "many_to_one" {
+								return false // stop scanning if we only need one
+							}
+						}
+						return true
+					})
+					
+					if join.Relation == "one_to_one" || join.Relation == "many_to_one" {
+						if len(joinedDocs) > 0 {
+							doc.Set(join.As, joinedDocs[0])
+						} else {
+							doc.Set(join.As, types.Null())
+						}
+					} else {
+						doc.Set(join.As, types.Array(joinedDocs))
+					}
+				}
+			}
+		}
 	}
 	return results, nil
 }
@@ -239,14 +394,16 @@ type Database struct {
 	mu          sync.RWMutex
 	name        string
 	eng         *Engine
+	hub         *Hub
 	collections map[string]*Collection
 }
 
 // newDatabase creates a Database backed by eng.
-func newDatabase(eng *Engine, name string) *Database {
+func newDatabase(eng *Engine, name string, hub *Hub) *Database {
 	return &Database{
 		name:        name,
 		eng:         eng,
+		hub:         hub,
 		collections: make(map[string]*Collection),
 	}
 }
@@ -259,7 +416,7 @@ func (db *Database) Collection(name string) *Collection {
 	if c, ok := db.collections[ns]; ok {
 		return c
 	}
-	c := newCollection(db.eng, ns)
+	c := newCollection(db.eng, ns, db.hub)
 	db.collections[ns] = c
 	return c
 }
@@ -273,12 +430,18 @@ func (db *Database) Name() string { return db.name }
 type Store struct {
 	mu        sync.RWMutex
 	eng       *Engine
+	hub       *Hub
 	databases map[string]*Database
 }
 
 // NewStore wraps an Engine in a document-store interface.
 func NewStore(eng *Engine) *Store {
-	return &Store{eng: eng, databases: make(map[string]*Database)}
+	return &Store{eng: eng, hub: NewHub(), databases: make(map[string]*Database)}
+}
+
+// Hub returns the realtime pub/sub hub.
+func (s *Store) Hub() *Hub {
+	return s.hub
 }
 
 // DB returns (or lazily creates) the named database.
@@ -288,38 +451,113 @@ func (s *Store) DB(name string) *Database {
 	if db, ok := s.databases[name]; ok {
 		return db
 	}
-	db := newDatabase(s.eng, name)
+	db := newDatabase(s.eng, name, s.hub)
 	s.databases[name] = db
 	return db
+}
+
+// CreateDatabase registers a database in metadata and returns its handle.
+func (s *Store) CreateDatabase(name string) (*Database, error) {
+	db := s.DB(name)
+	if err := s.eng.Put("_meta", []byte(metaDatabasePrefix+name), []byte{1}); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+// CreateCollection registers a collection in metadata and returns its handle.
+func (s *Store) CreateCollection(dbName, colName string) (*Collection, error) {
+	db, err := s.CreateDatabase(dbName)
+	if err != nil {
+		return nil, err
+	}
+	col := db.Collection(colName)
+	if err := s.eng.Put("_meta", []byte(metaCollectionPrefix+dbName+"/"+colName), []byte{1}); err != nil {
+		return nil, err
+	}
+	return col, nil
 }
 
 // ListDatabases returns the names of all known databases
 // (those that have at least one key in the engine).
 func (s *Store) ListDatabases() []string {
+	seen := make(map[string]struct{})
+
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]string, 0, len(s.databases))
 	for name := range s.databases {
+		seen[name] = struct{}{}
+	}
+	s.mu.RUnlock()
+
+	_ = s.eng.Scan("_meta", func(key, _ []byte) bool {
+		name := string(key)
+		switch {
+		case strings.HasPrefix(name, metaDatabasePrefix):
+			seen[strings.TrimPrefix(name, metaDatabasePrefix)] = struct{}{}
+		case strings.HasPrefix(name, metaCollectionPrefix):
+			parts := strings.SplitN(strings.TrimPrefix(name, metaCollectionPrefix), "/", 2)
+			if len(parts) == 2 && parts[0] != "" {
+				seen[parts[0]] = struct{}{}
+			}
+		}
+		return true
+	})
+
+	for _, ns := range s.eng.Namespaces() {
+		if ns == "_meta" {
+			continue
+		}
+		parts := strings.SplitN(ns, "/", 2)
+		if len(parts) == 2 && parts[0] != "" {
+			seen[parts[0]] = struct{}{}
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for name := range seen {
 		out = append(out, name)
 	}
+	sort.Strings(out)
 	return out
 }
 
 // ListCollections returns collection names within a database.
 func (s *Store) ListCollections(dbName string) []string {
+	seen := make(map[string]struct{})
+
 	s.mu.RLock()
 	db, ok := s.databases[dbName]
 	s.mu.RUnlock()
-	if !ok {
-		return nil
+	if ok {
+		db.mu.RLock()
+		prefix := dbName + "/"
+		for ns := range db.collections {
+			seen[strings.TrimPrefix(ns, prefix)] = struct{}{}
+		}
+		db.mu.RUnlock()
 	}
-	db.mu.RLock()
-	defer db.mu.RUnlock()
-	prefix := dbName + "/"
-	out := make([]string, 0, len(db.collections))
-	for ns := range db.collections {
-		out = append(out, strings.TrimPrefix(ns, prefix))
+
+	metaPrefix := metaCollectionPrefix + dbName + "/"
+	_ = s.eng.Scan("_meta", func(key, _ []byte) bool {
+		name := string(key)
+		if strings.HasPrefix(name, metaPrefix) {
+			seen[strings.TrimPrefix(name, metaPrefix)] = struct{}{}
+		}
+		return true
+	})
+
+	namespacePrefix := dbName + "/"
+	for _, ns := range s.eng.Namespaces() {
+		if strings.HasPrefix(ns, namespacePrefix) {
+			seen[strings.TrimPrefix(ns, namespacePrefix)] = struct{}{}
+		}
 	}
+
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
 	return out
 }
 

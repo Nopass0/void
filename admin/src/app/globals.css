@@ -4,26 +4,26 @@
 
 @layer base {
   :root {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 240 100% 70%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
-    --radius: 0.75rem;
+    --background: 240 8% 3%;
+    --foreground: 210 6% 93%;
+    --card: 240 6% 7%;
+    --card-foreground: 210 6% 93%;
+    --popover: 240 6% 7%;
+    --popover-foreground: 210 6% 93%;
+    --primary: 160 100% 45%;
+    --primary-foreground: 240 6% 4%;
+    --secondary: 240 5% 12%;
+    --secondary-foreground: 210 6% 93%;
+    --muted: 240 5% 12%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 240 5% 14%;
+    --accent-foreground: 210 6% 93%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 210 6% 93%;
+    --border: 240 5% 14%;
+    --input: 240 5% 14%;
+    --ring: 160 100% 45%;
+    --radius: 0.5rem;
   }
 }
 
@@ -33,12 +33,13 @@
   }
   body {
     @apply bg-background text-foreground;
-    background: radial-gradient(ellipse at top left, #1a0a2e 0%, #0a0a1f 40%, #0f0f1a 100%);
     min-height: 100vh;
     font-feature-settings: "rlig" 1, "calt" 1;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(240 5% 20%) transparent;
   }
 
-  /* Custom scrollbar */
+  /* Scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -47,73 +48,164 @@
     @apply bg-transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-void-600/50 rounded-full;
+    background: hsl(240 5% 20%);
+    border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-void-500/70;
+    background: hsl(240 5% 28%);
   }
 }
 
 @layer components {
-  /* Glassmorphism card */
-  .glass {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  /* Clean card */
+  .card-surface {
+    background: hsl(240 6% 7%);
+    border: 1px solid hsl(240 5% 14%);
+    border-radius: var(--radius);
   }
 
-  .glass-dark {
-    background: rgba(10, 10, 31, 0.7);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(96, 96, 255, 0.15);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  .card-surface-hover {
+    transition: border-color 0.15s ease, background-color 0.15s ease;
   }
-
-  .glass-hover {
-    transition: all 0.2s ease;
-  }
-  .glass-hover:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(96, 96, 255, 0.3);
-    box-shadow: 0 0 20px rgba(96, 96, 255, 0.2);
-  }
-
-  /* Neon text */
-  .neon-text {
-    text-shadow: 0 0 10px rgba(96, 96, 255, 0.8), 0 0 20px rgba(96, 96, 255, 0.4);
+  .card-surface-hover:hover {
+    border-color: hsl(240 5% 20%);
+    background: hsl(240 6% 9%);
   }
 
   /* Gradient text */
   .gradient-text {
-    background: linear-gradient(135deg, #8080ff 0%, #c080ff 50%, #80c0ff 100%);
+    background: linear-gradient(135deg, #00E599 0%, #00D4AA 50%, #00C4FF 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
-  /* Animated border */
-  .animated-border {
-    position: relative;
-  }
-  .animated-border::before {
-    content: "";
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    background: linear-gradient(90deg, #6060ff, #c060ff, #60c0ff, #6060ff);
-    background-size: 200% 100%;
-    animation: glass-shimmer 3s linear infinite;
-    z-index: -1;
+  /* Badge */
+  .metric-badge {
+    @apply text-xs font-mono px-2 py-0.5 rounded-md;
+    background: hsl(160 100% 45% / 0.1);
+    border: 1px solid hsl(160 100% 45% / 0.2);
+    color: hsl(160 100% 45%);
   }
 
-  /* Metric badge */
-  .metric-badge {
-    @apply text-xs font-mono px-2 py-0.5 rounded-full;
-    background: rgba(96, 96, 255, 0.15);
-    border: 1px solid rgba(96, 96, 255, 0.3);
-    color: #a0a0ff;
+  /* Table styles */
+  .data-table {
+    @apply w-full text-sm table-auto;
+  }
+  .data-table thead {
+    @apply sticky top-0 z-10;
+    background: hsl(240 6% 7%);
+  }
+  .data-table th {
+    @apply px-3 py-2.5 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap border-b border-border select-none;
+  }
+  .data-table th.sortable {
+    @apply cursor-pointer;
+  }
+  .data-table th.sortable:hover {
+    color: hsl(210 6% 80%);
+  }
+  .data-table td {
+    @apply px-3 py-2 border-b border-border/50 text-sm;
+  }
+  .data-table tbody tr {
+    @apply transition-colors;
+  }
+  .data-table tbody tr:hover {
+    background: hsl(240 5% 10%);
+  }
+  .data-table tbody tr.selected {
+    background: hsl(160 100% 45% / 0.05);
+  }
+
+  /* Inline editable cell */
+  .cell-editable {
+    @apply cursor-text rounded px-1 -mx-1;
+    transition: background-color 0.1s ease;
+  }
+  .cell-editable:hover {
+    background: hsl(240 5% 14%);
+  }
+  .cell-edit-input {
+    @apply w-full bg-transparent text-foreground text-sm outline-none;
+    border: 1px solid hsl(160 100% 45% / 0.5);
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin: -3px -7px;
+  }
+
+  /* Pagination bar */
+  .pagination-bar {
+    @apply flex items-center justify-between px-3 py-2 text-sm text-muted-foreground border-t border-border;
+  }
+
+  /* Button variants */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors;
+    background: hsl(160 100% 45%);
+    color: hsl(240 6% 4%);
+  }
+  .btn-primary:hover {
+    background: hsl(160 100% 40%);
+  }
+  .btn-primary:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors;
+    background: hsl(240 5% 14%);
+    color: hsl(210 6% 80%);
+    border: 1px solid hsl(240 5% 18%);
+  }
+  .btn-secondary:hover {
+    background: hsl(240 5% 18%);
+    border-color: hsl(240 5% 24%);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-1.5 px-2 py-1.5 text-sm rounded-md transition-colors text-muted-foreground;
+  }
+  .btn-ghost:hover {
+    @apply text-foreground;
+    background: hsl(240 5% 12%);
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors;
+    background: hsl(0 62% 50% / 0.15);
+    color: hsl(0 80% 65%);
+    border: 1px solid hsl(0 62% 50% / 0.2);
+  }
+  .btn-danger:hover {
+    background: hsl(0 62% 50% / 0.25);
+  }
+
+  /* Input field */
+  .input-field {
+    @apply w-full px-3 py-2 rounded-md text-sm bg-transparent transition-colors outline-none;
+    border: 1px solid hsl(240 5% 18%);
+    color: hsl(210 6% 93%);
+  }
+  .input-field:focus {
+    border-color: hsl(160 100% 45% / 0.5);
+    box-shadow: 0 0 0 2px hsl(160 100% 45% / 0.1);
+  }
+  .input-field::placeholder {
+    color: hsl(240 4% 36%);
+  }
+
+  /* Select field */
+  .select-field {
+    @apply w-full px-3 py-2 rounded-md text-sm transition-colors outline-none appearance-none;
+    background: hsl(240 6% 9%);
+    border: 1px solid hsl(240 5% 18%);
+    color: hsl(210 6% 93%);
+  }
+  .select-field:focus {
+    border-color: hsl(160 100% 45% / 0.5);
+  }
+  .select-field option {
+    background: hsl(240 6% 9%);
   }
 }

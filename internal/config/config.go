@@ -180,7 +180,7 @@ func DefaultConfig() *Config {
 		Log: LogConfig{
 			Level:      "info",
 			Format:     "console",
-			OutputPath: "stdout",
+			OutputPath: "./logs/voiddb.log",
 		},
 		Admin: AdminConfig{
 			Enabled:   true,
@@ -218,6 +218,18 @@ func Load(path string) (*Config, error) {
 	applyEnv(cfg)
 
 	return cfg, nil
+}
+
+// Save writes the configuration back to the file
+func (c *Config) Save(path string) error {
+	if path == "" {
+		return fmt.Errorf("config path is empty")
+	}
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 // applyEnv overrides config values from VOID_* environment variables.

@@ -6,16 +6,12 @@ import { Toaster } from "sonner";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "VoidDB — Admin Panel",
+  title: "VoidDB — Console",
   description:
     "High-performance document database with S3-compatible blob storage",
   icons: { icon: "/favicon.ico" },
 };
 
-/**
- * Root layout wraps every page with fonts, the Toaster notification provider,
- * and global styles.
- */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -30,9 +26,9 @@ export default function RootLayout({
           position="bottom-right"
           toastOptions={{
             style: {
-              background: "rgba(10,10,31,0.9)",
-              border: "1px solid rgba(96,96,255,0.3)",
-              color: "#e0e0ff",
+              background: "hsl(240 6% 9%)",
+              border: "1px solid hsl(240 5% 18%)",
+              color: "hsl(210 6% 93%)",
             },
           }}
         />

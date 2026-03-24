@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"go.uber.org/zap"
 	"github.com/voiddb/void/internal/api/middleware"
 	"github.com/voiddb/void/internal/auth"
 )
@@ -42,6 +43,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
+	zap.L().Info("user authenticated", zap.String("username", req.Username), zap.String("ip", r.RemoteAddr))
 	writeJSON(w, http.StatusOK, pair)
 }
 

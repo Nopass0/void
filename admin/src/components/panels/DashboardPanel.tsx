@@ -7,13 +7,12 @@
 import React from "react";
 import { Database, Layers, HardDrive, Activity, Cpu, MemoryStick } from "lucide-react";
 import { useStore } from "@/store";
-import { GlassCard, StatCard } from "@/components/ui/glass-card";
+import { Card, StatCard } from "@/components/ui/glass-card";
 import { MetricsChart } from "@/components/features/MetricsChart";
 import { formatBytes, formatNumber } from "@/lib/utils";
+import { toast } from "sonner";
+import { Copy } from "lucide-react";
 
-/**
- * DashboardPanel shows real-time engine statistics and trend charts.
- */
 export function DashboardPanel() {
   const { stats, databases, statsHistory } = useStore();
 
@@ -29,23 +28,23 @@ export function DashboardPanel() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Hero banner */}
-      <GlassCard glowBorder className="p-6">
+      <Card className="p-6">
         <div className="flex items-center gap-4">
           <div className="space-y-1">
-            <h2 className="text-xl font-bold gradient-text">VoidDB Engine</h2>
+            <h2 className="text-xl font-bold text-foreground">VoidDB Engine</h2>
             <p className="text-sm text-muted-foreground">
               LSM-tree · Bloom filters · Concurrent skip-list memtable
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-neon-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-neon-500" />
             </span>
-            <span className="text-xs text-green-400 font-medium">Running</span>
+            <span className="text-xs text-neon-500 font-medium">Running</span>
           </div>
         </div>
-      </GlassCard>
+      </Card>
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -94,25 +93,52 @@ export function DashboardPanel() {
       </div>
 
       {/* Charts */}
-      <GlassCard delay={0.35} className="p-5">
-        <h3 className="text-sm font-semibold text-muted-foreground mb-4">
+      <Card delay={0.35} className="p-5">
+        <h3 className="text-sm font-medium text-muted-foreground mb-4">
           Memory Usage (live)
         </h3>
         <MetricsChart />
-      </GlassCard>
+      </Card>
 
       {/* Quick-start */}
-      <GlassCard delay={0.4} className="p-5">
-        <h3 className="text-sm font-semibold mb-3 gradient-text">Quick Start</h3>
-        <pre className="text-xs font-mono text-muted-foreground bg-black/30 rounded-lg p-4 overflow-x-auto">
+      <Card delay={0.4} className="p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-foreground">Quick Start & Connection</h3>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => {
+                const token = localStorage.getItem("void_access_token");
+                navigator.clipboard.writeText(token || "");
+                toast.success("Auth Token copied");
+              }}
+              className="btn-secondary text-xs !py-1"
+            >
+              <Copy className="w-3 h-3" />
+              Copy Token
+            </button>
+            <button 
+              onClick={() => {
+                const token = localStorage.getItem("void_access_token");
+                const code = `import { VoidClient } from 'voiddb-orm';\n\nconst db = new VoidClient({\n  url: '${process.env.NEXT_PUBLIC_API_URL || "http://localhost:7700"}',\n  token: '${token}'\n});`;
+                navigator.clipboard.writeText(code);
+                toast.success("ORM Config copied");
+              }}
+              className="btn-primary text-xs !py-1"
+            >
+              <Copy className="w-3 h-3" />
+              Copy ORM Config
+            </button>
+          </div>
+        </div>
+        <pre className="text-xs font-mono text-muted-foreground bg-surface-0 rounded-md p-4 overflow-x-auto border border-border">
 {`# Connect with the TypeScript ORM
-import { VoidClient } from '@voiddb/orm'
+import { VoidClient } from 'voiddb-orm'
 const db = new VoidClient({ url: 'http://localhost:7700', token: '<token>' })
 const col = db.database('myapp').collection('users')
 await col.insert({ name: 'Alice', age: 30 })
 const users = await col.find({ where: [{ field: 'age', op: 'gte', value: 18 }] })`}
         </pre>
-      </GlassCard>
+      </Card>
     </div>
   );
 }

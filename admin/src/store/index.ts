@@ -6,14 +6,12 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { User, Document, EngineStats, ObjectMeta } from "@/lib/api";
+import type { User, Document, EngineStats, ObjectMeta, Schema } from "@/lib/api";
 
 // ── Auth slice ────────────────────────────────────────────────────────────────
 
 interface AuthState {
-  /** The currently logged-in user (null if not authenticated). */
   user: User | null;
-  /** True while the initial auth check is in progress. */
   authLoading: boolean;
   setUser: (user: User | null) => void;
   setAuthLoading: (v: boolean) => void;
@@ -22,39 +20,38 @@ interface AuthState {
 // ── Navigation slice ──────────────────────────────────────────────────────────
 
 interface NavState {
-  /** Currently selected database name. */
   activeDb: string | null;
-  /** Currently selected collection name. */
   activeCol: string | null;
-  /** Whether the sidebar is collapsed on mobile. */
+  activeSchema: Schema | null;
   sidebarOpen: boolean;
-  /** The active top-level tab: "data" | "blob" | "users" | "settings". */
-  activeTab: "data" | "blob" | "users" | "settings" | "dashboard";
+  activeTab: "data" | "blob" | "users" | "settings" | "dashboard" | "docs" | "query" | "logs";
   setActiveDb: (db: string | null) => void;
   setActiveCol: (col: string | null) => void;
+  setActiveSchema: (schema: Schema | null) => void;
   setSidebarOpen: (v: boolean) => void;
   setActiveTab: (tab: NavState["activeTab"]) => void;
 }
 
 // ── Data slice ────────────────────────────────────────────────────────────────
 
+interface SortSpec {
+  field: string;
+  dir: "asc" | "desc";
+}
+
 interface DataState {
-  /** List of known database names. */
   databases: string[];
-  /** Map of dbName → collection names. */
   collections: Record<string, string[]>;
-  /** The currently displayed documents. */
   documents: Document[];
-  /** Total count for the current query. */
   docCount: number;
-  /** Whether a data fetch is in progress. */
   dataLoading: boolean;
-  /** Current query JSON (raw string edited in QueryEditor). */
   queryText: string;
-  /** Current page number (0-indexed). */
   page: number;
-  /** Page size. */
   pageSize: number;
+  /** Column sort state for the document table. */
+  sortBy: SortSpec | null;
+  /** Selected document IDs for bulk operations. */
+  selectedIds: Set<string>;
   setDatabases: (dbs: string[]) => void;
   setCollections: (db: string, cols: string[]) => void;
   setDocuments: (docs: Document[], count: number) => void;
@@ -62,6 +59,10 @@ interface DataState {
   setQueryText: (q: string) => void;
   setPage: (p: number) => void;
   setPageSize: (n: number) => void;
+  setSortBy: (s: SortSpec | null) => void;
+  setSelectedIds: (ids: Set<string>) => void;
+  toggleSelectedId: (id: string) => void;
+  clearSelectedIds: () => void;
 }
 
 // ── Stats slice ───────────────────────────────────────────────────────────────
@@ -89,10 +90,6 @@ interface BlobState {
 
 type VoidStore = AuthState & NavState & DataState & StatsState & BlobState;
 
-/**
- * useStore is the single Zustand store for VoidDB Admin.
- * Auth state is persisted to localStorage; everything else is session-only.
- */
 export const useStore = create<VoidStore>()(
   persist(
     (set, _get) => ({
@@ -105,10 +102,12 @@ export const useStore = create<VoidStore>()(
       // Nav
       activeDb: null,
       activeCol: null,
+      activeSchema: null,
       sidebarOpen: true,
       activeTab: "dashboard",
-      setActiveDb: (activeDb) => set({ activeDb, activeCol: null }),
-      setActiveCol: (activeCol) => set({ activeCol }),
+      setActiveDb: (activeDb) => set({ activeDb, activeCol: null, activeSchema: null }),
+      setActiveCol: (activeCol) => set({ activeCol, activeSchema: null }),
+      setActiveSchema: (activeSchema) => set({ activeSchema }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setActiveTab: (activeTab) => set({ activeTab }),
 
@@ -121,6 +120,8 @@ export const useStore = create<VoidStore>()(
       queryText: "{}",
       page: 0,
       pageSize: 25,
+      sortBy: null,
+      selectedIds: new Set<string>(),
       setDatabases: (databases) => set({ databases }),
       setCollections: (db, cols) =>
         set((s) => ({ collections: { ...s.collections, [db]: cols } })),
@@ -129,6 +130,16 @@ export const useStore = create<VoidStore>()(
       setQueryText: (queryText) => set({ queryText }),
       setPage: (page) => set({ page }),
       setPageSize: (pageSize) => set({ pageSize }),
+      setSortBy: (sortBy) => set({ sortBy }),
+      setSelectedIds: (selectedIds) => set({ selectedIds }),
+      toggleSelectedId: (id) =>
+        set((s) => {
+          const next = new Set(s.selectedIds);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return { selectedIds: next };
+        }),
+      clearSelectedIds: () => set({ selectedIds: new Set<string>() }),
 
       // Stats
       stats: null,

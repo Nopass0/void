@@ -1,39 +1,31 @@
 /**
- * @fileoverview QueryEditor - a CodeMirror-powered JSON query editor
- * integrated with the Zustand store and the document table.
+ * @fileoverview QueryEditor – JSON query editor for VoidDB.
  */
 
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
 import { Play, Eraser } from "lucide-react";
 import { toast } from "sonner";
 import { useStore } from "@/store";
 import * as api from "@/lib/api";
 import dynamic from "next/dynamic";
 
-// Dynamic import to avoid SSR issues with CodeMirror.
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ssr: false,
   loading: () => (
-    <div className="h-40 flex items-center justify-center text-muted-foreground text-xs">
+    <div className="h-32 flex items-center justify-center text-muted-foreground text-xs">
       Loading editor...
     </div>
   ),
 });
 
-/** Default query template shown to users. */
 const DEFAULT_QUERY = JSON.stringify(
   { where: [], order_by: [{ field: "_id", dir: "asc" }], limit: 25 },
   null,
   2
 );
 
-/**
- * QueryEditor renders a JSON editor for building VoidDB queries.
- * Results are loaded into the document table on "Run".
- */
 export function QueryEditor() {
   const {
     queryText, setQueryText,
@@ -49,7 +41,6 @@ export function QueryEditor() {
   const [jsonExt, setJsonExt] = useState<any[]>([]);
   const loaded = useRef(false);
 
-  // Load CodeMirror extensions lazily to avoid SSR issues.
   useEffect(() => {
     if (loaded.current) return;
     loaded.current = true;
@@ -96,28 +87,18 @@ export function QueryEditor() {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="glass rounded-xl overflow-hidden border border-void-500/20"
-    >
+    <div className="rounded-lg overflow-hidden border border-border bg-surface-2">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-void-500/20">
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Query Editor
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          Query
         </span>
         <div className="flex items-center gap-2">
-          <button
-            onClick={clear}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1"
-          >
+          <button onClick={clear} className="btn-ghost text-xs">
             <Eraser className="w-3 h-3" />
             Clear
           </button>
-          <button
-            onClick={runQuery}
-            className="flex items-center gap-1.5 text-xs bg-void-600/40 hover:bg-void-600/60 text-void-200 px-3 py-1.5 rounded-lg transition-colors border border-void-500/30"
-          >
+          <button onClick={runQuery} className="btn-primary text-xs !py-1">
             <Play className="w-3 h-3" />
             Run
           </button>
@@ -127,7 +108,7 @@ export function QueryEditor() {
       {/* CodeMirror */}
       <CodeMirror
         value={localText}
-        height="160px"
+        height="140px"
         theme={theme}
         extensions={jsonExt}
         onChange={setLocalText}
@@ -141,6 +122,6 @@ export function QueryEditor() {
           background: "transparent",
         }}
       />
-    </motion.div>
+    </div>
   );
 }
