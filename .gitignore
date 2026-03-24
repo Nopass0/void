@@ -1,8 +1,8 @@
 # Binaries
-voiddb
-voiddb.exe
-voidcli
-voidcli.exe
+/voiddb
+/voiddb.exe
+/voidcli
+/voidcli.exe
 dist/
 
 # Data directories (never commit actual data)
