@@ -1,11 +1,11 @@
 /**
- * @fileoverview QueryEditor – a CodeMirror-powered JSON query editor
+ * @fileoverview QueryEditor - a CodeMirror-powered JSON query editor
  * integrated with the Zustand store and the document table.
  */
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Play, Eraser } from "lucide-react";
 import { toast } from "sonner";
@@ -14,11 +14,14 @@ import * as api from "@/lib/api";
 import dynamic from "next/dynamic";
 
 // Dynamic import to avoid SSR issues with CodeMirror.
-const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
-const { json } = await import("@codemirror/lang-json").catch(() => ({ json: () => [] }));
-const oneDark = await import("@uiw/codemirror-theme-one-dark")
-  .then((m) => m.oneDark)
-  .catch(() => undefined);
+const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-40 flex items-center justify-center text-muted-foreground text-xs">
+      Loading editor...
+    </div>
+  ),
+});
 
 /** Default query template shown to users. */
 const DEFAULT_QUERY = JSON.stringify(
@@ -40,6 +43,24 @@ export function QueryEditor() {
   } = useStore();
 
   const [localText, setLocalText] = useState(queryText || DEFAULT_QUERY);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [theme, setTheme] = useState<any>(undefined);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [jsonExt, setJsonExt] = useState<any[]>([]);
+  const loaded = useRef(false);
+
+  // Load CodeMirror extensions lazily to avoid SSR issues.
+  useEffect(() => {
+    if (loaded.current) return;
+    loaded.current = true;
+    Promise.all([
+      import("@codemirror/theme-one-dark").then((m) => m.oneDark),
+      import("@codemirror/lang-json").then((m) => [m.json()]),
+    ]).then(([t, ext]) => {
+      setTheme(t);
+      setJsonExt(ext);
+    });
+  }, []);
 
   const runQuery = async () => {
     if (!activeDb || !activeCol) {
@@ -107,8 +128,8 @@ export function QueryEditor() {
       <CodeMirror
         value={localText}
         height="160px"
-        theme={oneDark}
-        extensions={[json()]}
+        theme={theme}
+        extensions={jsonExt}
         onChange={setLocalText}
         basicSetup={{
           lineNumbers: false,
