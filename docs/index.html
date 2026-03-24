@@ -112,6 +112,7 @@
   <span class="logo">VoidDB</span>
   <ul>
     <li><a href="#quickstart">Quick Start</a></li>
+    <li><a href="#ai">AI Guide</a></li>
     <li><a href="#api">REST API</a></li>
     <li><a href="#cli">CLI</a></li>
     <li><a href="#orm">ORM</a></li>
@@ -126,6 +127,7 @@
   <p>A high-performance LSM-tree document database written in Go — with REST API, S3-compatible blob storage, and a beautiful admin panel.</p>
   <div class="hero-btns">
     <a class="btn btn-primary" href="#quickstart">Get Started</a>
+    <a class="btn btn-secondary" href="#ai">AI Agent Guide</a>
     <a class="btn btn-secondary" href="https://github.com/Nopass0/void" target="_blank">View on GitHub</a>
   </div>
 </div>
@@ -155,6 +157,17 @@
     <div class="card"><div class="card-icon">🔧</div><h3>CLI Tool</h3><p><code>voidcli</code> — manage databases, collections, and documents from the terminal.</p></div>
     <div class="card"><div class="card-icon">📦</div><h3>ORM Libraries</h3><p>Type-safe clients for TypeScript (<code>@voiddb/orm</code> on npm) and Go (<code>github.com/voiddb/orm-go</code>).</p></div>
   </div>
+</section>
+
+<section id="ai">
+  <h2>AI Agent Guide</h2>
+  <p>Every running VoidDB server exposes a machine-readable markdown guide for AI agents and automation tools.</p>
+<pre><code><span class="cmt"># Fetch the live server guide</span>
+curl http://localhost:7700/skill.md
+
+<span class="cmt"># Alternate well-known path</span>
+curl http://localhost:7700/.well-known/voiddb-skill.md</code></pre>
+  <p>The repository copy lives here: <a href="https://github.com/Nopass0/void/blob/main/SKILL.md" target="_blank">SKILL.md</a>.</p>
 </section>
 
 <!-- Quick Start -->
@@ -254,11 +267,13 @@ docker compose up -d
   <h3 style="margin-top:1.5rem">Query syntax</h3>
 <pre><code><span class="cmt">// POST /v1/databases/myapp/users/query</span>
 {
-  <span class="str">"where"</span>: [
-    { <span class="str">"field"</span>: <span class="str">"age"</span>,    <span class="str">"op"</span>: <span class="str">"gte"</span>,        <span class="str">"value"</span>: <span class="num">18</span> },
-    { <span class="str">"field"</span>: <span class="str">"active"</span>, <span class="str">"op"</span>: <span class="str">"eq"</span>,         <span class="str">"value"</span>: <span class="kw">true</span> },
-    { <span class="str">"field"</span>: <span class="str">"name"</span>,   <span class="str">"op"</span>: <span class="str">"starts_with"</span>, <span class="str">"value"</span>: <span class="str">"A"</span> }
-  ],
+  <span class="str">"where"</span>: {
+    <span class="str">"AND"</span>: [
+      { <span class="str">"field"</span>: <span class="str">"age"</span>,    <span class="str">"op"</span>: <span class="str">"gte"</span>,        <span class="str">"value"</span>: <span class="num">18</span> },
+      { <span class="str">"field"</span>: <span class="str">"active"</span>, <span class="str">"op"</span>: <span class="str">"eq"</span>,         <span class="str">"value"</span>: <span class="kw">true</span> },
+      { <span class="str">"field"</span>: <span class="str">"name"</span>,   <span class="str">"op"</span>: <span class="str">"starts_with"</span>, <span class="str">"value"</span>: <span class="str">"A"</span> }
+    ]
+  },
   <span class="str">"order_by"</span>: [{ <span class="str">"field"</span>: <span class="str">"age"</span>, <span class="str">"dir"</span>: <span class="str">"asc"</span> }],
   <span class="str">"limit"</span>: <span class="num">25</span>,
   <span class="str">"skip"</span>:  <span class="num">0</span>
@@ -339,7 +354,7 @@ docker compose up -d
 
   <div id="orm-ts" class="tab-content active">
     <p>Install: <code>npm install @voiddb/orm</code> &nbsp; or &nbsp; <code>bun add @voiddb/orm</code></p>
-<pre><code><span class="kw">import</span> { <span class="type">VoidClient</span> } <span class="kw">from</span> <span class="str">'@voiddb/orm'</span>;
+<pre><code><span class="kw">import</span> { <span class="type">VoidClient</span>, <span class="type">query</span> } <span class="kw">from</span> <span class="str">'@voiddb/orm'</span>;
 
 <span class="kw">const</span> client = <span class="kw">new</span> <span class="type">VoidClient</span>({ url: <span class="str">'http://localhost:7700'</span> });
 <span class="kw">await</span> client.<span class="fn">login</span>(<span class="str">'admin'</span>, <span class="str">'admin'</span>);
@@ -347,22 +362,28 @@ docker compose up -d
 <span class="kw">const</span> users = client.<span class="fn">db</span>(<span class="str">'myapp'</span>).<span class="fn">collection</span>&lt;<span class="type">User</span>&gt;(<span class="str">'users'</span>);
 
 <span class="cmt">// Insert</span>
-<span class="kw">const</span> doc = <span class="kw">await</span> users.<span class="fn">insert</span>({ name: <span class="str">'Alice'</span>, age: <span class="num">30</span> });
+<span class="kw">const</span> id = <span class="kw">await</span> users.<span class="fn">insert</span>({ name: <span class="str">'Alice'</span>, age: <span class="num">30</span>, active: <span class="kw">true</span> });
 
-<span class="cmt">// Query (immutable builder)</span>
-<span class="kw">const</span> results = <span class="kw">await</span> users
-  .<span class="fn">query</span>()
-  .<span class="fn">where</span>(<span class="str">'age'</span>, <span class="str">'gte'</span>, <span class="num">18</span>)
-  .<span class="fn">where</span>(<span class="str">'active'</span>, <span class="str">'eq'</span>, <span class="kw">true</span>)
-  .<span class="fn">orderBy</span>(<span class="str">'age'</span>, <span class="str">'asc'</span>)
-  .<span class="fn">limit</span>(<span class="num">10</span>)
-  .<span class="fn">execute</span>();
+<span class="cmt">// Get by ID</span>
+<span class="kw">const</span> user = <span class="kw">await</span> users.<span class="fn">get</span>(id);
+
+<span class="cmt">// Query (builder passed into find)</span>
+<span class="kw">const</span> results = <span class="kw">await</span> users.<span class="fn">find</span>(
+  <span class="fn">query</span>()
+    .<span class="fn">where</span>(<span class="str">'age'</span>, <span class="str">'gte'</span>, <span class="num">18</span>)
+    .<span class="fn">where</span>(<span class="str">'active'</span>, <span class="str">'eq'</span>, <span class="kw">true</span>)
+    .<span class="fn">orderBy</span>(<span class="str">'age'</span>, <span class="str">'asc'</span>)
+    .<span class="fn">limit</span>(<span class="num">10</span>)
+);
 
 <span class="cmt">// Update</span>
-<span class="kw">await</span> users.<span class="fn">patch</span>(doc._id, { age: <span class="num">31</span> });
+<span class="kw">await</span> users.<span class="fn">patch</span>(id, { age: <span class="num">31</span> });
+
+<span class="cmt">// Cache</span>
+<span class="kw">await</span> client.<span class="fn">cache</span>.<span class="fn">set</span>(<span class="str">'session:alice'</span>, { loggedIn: <span class="kw">true</span> }, <span class="num">3600</span>);
 
 <span class="cmt">// Delete</span>
-<span class="kw">await</span> users.<span class="fn">delete</span>(doc._id);</code></pre>
+<span class="kw">await</span> users.<span class="fn">delete</span>(id);</code></pre>
   </div>
 
   <div id="orm-go" class="tab-content">

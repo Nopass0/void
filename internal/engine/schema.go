@@ -51,6 +51,27 @@ func NewDefaultSchema() *Schema {
 // Apply applies the schema to a document, generating default values.
 func (s *Schema) Apply(doc *types.Document, isUpdate bool) error {
 	for _, f := range s.Fields {
+		if f.Name == "_id" {
+			if doc.ID == "" {
+				if f.Default != nil {
+					switch *f.Default {
+					case "uuid()":
+						if !isUpdate {
+							doc.ID = uuid.New().String()
+						}
+					default:
+						if !isUpdate {
+							doc.ID = *f.Default
+						}
+					}
+				} else if f.Required {
+					return fmt.Errorf("field %s is required", f.Name)
+				}
+			}
+			delete(doc.Fields, "_id")
+			continue
+		}
+
 		val := doc.Get(f.Name)
 		
 		if val.IsNull() {

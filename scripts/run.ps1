@@ -39,6 +39,7 @@ if (Test-Path $envFile) {
 }
 
 $PORT = if ($env:VOID_PORT) { $env:VOID_PORT } else { "7700" }
+$ADMIN_PORT = if ($env:VOID_ADMIN_PORT) { $env:VOID_ADMIN_PORT } else { "3000" }
 $PKG = ""
 if (Get-Command bun -ErrorAction SilentlyContinue) {
     $PKG = "bun"
@@ -146,7 +147,35 @@ function Start-AdminPanel {
     "NEXT_PUBLIC_API_URL=http://localhost:$PORT" |
         Set-Content (Join-Path $adminDir ".env.local") -Encoding UTF8
 
-    Write-Host "[admin] Starting admin panel at http://localhost:3000" -ForegroundColor Green
+    $existingAdmin = Get-PortProcess -Port ([int]$ADMIN_PORT)
+    if ($existingAdmin) {
+        Write-Host ""
+        Write-Host "[admin] Port $ADMIN_PORT is already in use by: $($existingAdmin.Name) (PID $($existingAdmin.Id))" -ForegroundColor Yellow
+        Write-Host "  [1] Stop the existing process and restart admin (default)"
+        Write-Host "  [2] Leave it running (skip admin start)"
+        Write-Host "  [3] Exit"
+        Write-Host ""
+        $choice = (Read-Host "  Choice [1]").Trim()
+        if (-not $choice) {
+            $choice = "1"
+        }
+
+        if ($choice -eq "3") {
+            exit 0
+        }
+
+        if ($choice -eq "2") {
+            Write-Host "[admin] Admin already running at http://localhost:$ADMIN_PORT" -ForegroundColor Green
+            return
+        }
+
+        Write-Host "[admin] Stopping PID $($existingAdmin.Id)..." -ForegroundColor Cyan
+        Stop-Process -Id $existingAdmin.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 800
+        Write-Host "[admin] Stopped." -ForegroundColor Green
+    }
+
+    Write-Host "[admin] Starting admin panel at http://localhost:$ADMIN_PORT" -ForegroundColor Green
     Push-Location $adminDir
     try {
         if ($Prod) {
@@ -154,9 +183,9 @@ function Start-AdminPanel {
                 Write-Host "[admin] Building..." -ForegroundColor Cyan
                 & $PKG run build
             }
-            & $PKG run start
+            & $PKG run start -- --port $ADMIN_PORT
         } else {
-            & $PKG run dev
+            & $PKG run dev -- --port $ADMIN_PORT
         }
     } finally {
         Pop-Location
@@ -231,9 +260,9 @@ if ($Dev) {
                     if (-not (Test-Path ".next")) {
                         & $pkg run build
                     }
-                    & $pkg run start
+                    & $pkg run start -- --port 3000
                 } else {
-                    & $pkg run dev
+                    & $pkg run dev -- --port 3000
                 }
             } -ArgumentList $ROOT, $PKG, $PORT, [bool]$AdminProd
             Write-Host "[admin] Admin panel starting (job $($adminJob.Id))..." -ForegroundColor Green

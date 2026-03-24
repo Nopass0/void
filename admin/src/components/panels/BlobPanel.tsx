@@ -75,6 +75,8 @@ export function BlobPanel() {
     }
   };
 
+  const objectGridTemplate = "minmax(18rem, 1fr) 7rem 14rem 11rem 5rem";
+
   return (
     <div className="flex gap-4 h-full">
       {/* Bucket list */}
@@ -167,65 +169,69 @@ export function BlobPanel() {
               <p className="text-sm">No objects in this bucket</p>
             </div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Key</th>
-                  <th>Size</th>
-                  <th>Type</th>
-                  <th>Modified</th>
-                  <th className="w-20" />
-                </tr>
-              </thead>
-              <tbody>
-                <AnimatePresence>
-                  {objects.map((obj, i) => {
-                    const objMenu: ContextMenuEntry[] = [
-                      { label: "Download", icon: <Download className="w-3.5 h-3.5" />, onClick: () => { window.open(api.getObjectUrl(obj.bucket, obj.key), "_blank"); } },
-                      { label: "Copy URL", icon: <Link className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(api.getObjectUrl(obj.bucket, obj.key)); toast.success("URL copied"); } },
-                      { label: "Copy key", icon: <Copy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(obj.key); toast.success("Key copied"); } },
-                      { separator: true },
-                      { label: "Delete", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleDelete(obj.key) },
-                    ];
-                    return (
-                    <ContextMenu key={obj.key} items={objMenu} as="tr">
-                      <motion.tr
+            <div className="min-w-0">
+              <div
+                className="sticky top-0 z-10 grid w-full border-b border-border bg-surface-1"
+                style={{ gridTemplateColumns: objectGridTemplate }}
+              >
+                <div className="px-3 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Key</div>
+                <div className="px-3 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Size</div>
+                <div className="px-3 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</div>
+                <div className="px-3 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Modified</div>
+                <div className="px-3 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground" />
+              </div>
+
+              <AnimatePresence>
+                {objects.map((obj, i) => {
+                  const objMenu: ContextMenuEntry[] = [
+                    { label: "Download", icon: <Download className="w-3.5 h-3.5" />, onClick: () => { window.open(api.getObjectUrl(obj.bucket, obj.key), "_blank"); } },
+                    { label: "Copy URL", icon: <Link className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(api.getObjectUrl(obj.bucket, obj.key)); toast.success("URL copied"); } },
+                    { label: "Copy key", icon: <Copy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(obj.key); toast.success("Key copied"); } },
+                    { separator: true },
+                    { label: "Delete", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleDelete(obj.key) },
+                  ];
+
+                  return (
+                    <ContextMenu key={obj.key} items={objMenu}>
+                      <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         transition={{ delay: i * 0.02 }}
-                        className="group"
+                        className="group grid w-full border-b border-border/50 hover:bg-surface-3"
+                        style={{ gridTemplateColumns: objectGridTemplate }}
                       >
-                        <td className="font-mono text-xs text-neon-400">{obj.key}</td>
-                        <td className="text-xs text-muted-foreground">{formatBytes(obj.size)}</td>
-                        <td className="text-xs text-muted-foreground">{obj.content_type}</td>
-                        <td className="text-xs text-muted-foreground">
+                        <div className="px-3 py-2 text-xs font-mono text-neon-400">
+                          <div className="truncate" title={obj.key}>{obj.key}</div>
+                        </div>
+                        <div className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{formatBytes(obj.size)}</div>
+                        <div className="px-3 py-2 text-xs text-muted-foreground">
+                          <div className="truncate" title={obj.content_type}>{obj.content_type}</div>
+                        </div>
+                        <div className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
                           {new Date(obj.last_modified).toLocaleString()}
-                        </td>
-                        <td>
-                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <a
-                              href={api.getObjectUrl(obj.bucket, obj.key)}
-                              download={obj.key}
-                              className="text-muted-foreground hover:text-neon-500 transition-colors"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </a>
-                            <button
-                              onClick={() => handleDelete(obj.key)}
-                              className="text-muted-foreground hover:text-red-400 transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </motion.tr>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <a
+                            href={api.getObjectUrl(obj.bucket, obj.key)}
+                            download={obj.key}
+                            className="text-muted-foreground hover:text-neon-500 transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </a>
+                          <button
+                            onClick={() => handleDelete(obj.key)}
+                            className="text-muted-foreground hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </motion.div>
                     </ContextMenu>
-                    );
-                  })}
-                </AnimatePresence>
-              </tbody>
-            </table>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
           )}
         </div>
       </div>

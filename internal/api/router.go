@@ -46,6 +46,7 @@ func NewRouter(
 	backupH := handlers.NewBackupHandler(store, "1.0.0")
 	cacheH  := handlers.NewCacheHandler(cache)
 	logsH   := handlers.NewLogsHandler()
+	metaH   := handlers.NewMetaHandler()
 
 	// --- Public auth routes --------------------------------------------------
 	pub := r.PathPrefix("/v1/auth").Subrouter()
@@ -122,6 +123,8 @@ func NewRouter(
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok","version":"1.0.0"}`))
 	}).Methods(http.MethodGet)
+	r.HandleFunc("/skill.md", metaH.Skill).Methods(http.MethodGet)
+	r.HandleFunc("/.well-known/voiddb-skill.md", metaH.Skill).Methods(http.MethodGet)
 
 	return r
 }

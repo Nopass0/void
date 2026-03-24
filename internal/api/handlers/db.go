@@ -409,6 +409,9 @@ func docToMap(doc *types.Document) map[string]interface{} {
 	m := make(map[string]interface{}, len(doc.Fields)+1)
 	m["_id"] = doc.ID
 	for k, v := range doc.Fields {
+		if k == "_id" {
+			continue
+		}
 		m[k] = valueToJSON(v)
 	}
 	return m

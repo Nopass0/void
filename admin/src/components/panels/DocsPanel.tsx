@@ -220,6 +220,30 @@ go build -o voiddb ./cmd/voiddb
       ),
     },
     {
+      id: "agents",
+      icon: <BookOpen className="w-3.5 h-3.5" />,
+      label: "AI Agents",
+      content: (
+        <>
+          <Heading id="agents">AI Agent Guide</Heading>
+          <P>
+            VoidDB exposes a machine-readable markdown guide for automation and AI tooling.
+            Agents can fetch it directly from the running server and use it as the source of truth
+            for auth, query syntax, cache, blobs, and safe write behavior.
+          </P>
+
+          <SubHeading>Server URL</SubHeading>
+          <CodeBlock lang="bash" code={`curl ${apiUrl}/skill.md`} />
+
+          <SubHeading>Alternate Well-Known URL</SubHeading>
+          <CodeBlock lang="bash" code={`curl ${apiUrl}/.well-known/voiddb-skill.md`} />
+
+          <SubHeading>Repository Copy</SubHeading>
+          <CodeBlock lang="text" code={`https://github.com/Nopass0/void/blob/main/SKILL.md`} />
+        </>
+      ),
+    },
+    {
       id: "query",
       icon: <Search className="w-3.5 h-3.5" />,
       label: "Query DSL",
@@ -234,10 +258,12 @@ go build -o voiddb ./cmd/voiddb
 
           <SubHeading>Full Query Spec</SubHeading>
           <CodeBlock lang="json" code={`{
-  "where": [
-    { "field": "age", "op": "gte", "value": 18 },
-    { "field": "status", "op": "eq", "value": "active" }
-  ],
+  "where": {
+    "AND": [
+      { "field": "age", "op": "gte", "value": 18 },
+      { "field": "status", "op": "eq", "value": "active" }
+    ]
+  },
   "order_by": [
     { "field": "created_at", "dir": "desc" }
   ],
@@ -282,7 +308,7 @@ go build -o voiddb ./cmd/voiddb
   -H 'Authorization: Bearer <token>' \\
   -H 'Content-Type: application/json' \\
   -d '{
-    "where": [{"field":"age","op":"gte","value":18}],
+    "where": {"AND":[{"field":"age","op":"gte","value":18}]},
     "order_by": [{"field":"name","dir":"asc"}],
     "limit": 10
   }'`} />
@@ -319,10 +345,10 @@ interface User { name: string; age: number; email: string }
 const users = client.database('myapp').collection<User>('users')
 
 // Insert
-const { _id } = await users.insert({ name: 'Alice', age: 30, email: 'alice@example.com' })
+const id = await users.insert({ name: 'Alice', age: 30, email: 'alice@example.com' })
 
 // Find by ID
-const user = await users.get(_id)
+const user = await users.get(id)
 
 // Query with fluent builder
 const adults = await users.find(
@@ -335,16 +361,20 @@ const adults = await users.find(
 )
 
 // Update (partial)
-await users.patch(_id, { age: 31 })
+await users.patch(id, { age: 31 })
 
-// Replace (full)
-await users.put(_id, { name: 'Alice', age: 31, email: 'alice@new.com' })
+// Replace (full document)
+await users.put(id, { name: 'Alice', age: 31, email: 'alice@new.com' })
 
 // Delete
-await users.delete(_id)
+await users.delete(id)
 
 // Count
-const count = await users.count(query().where('age', 'gte', 18))`} />
+const count = await users.count(query().where('age', 'gte', 18))
+
+// Cache
+await client.cache.set('session:alice', { loggedIn: true }, 3600)
+const session = await client.cache.get<{ loggedIn: boolean }>('session:alice')`} />
         </>
       ),
     },

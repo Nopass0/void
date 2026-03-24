@@ -104,6 +104,16 @@ npm run dev   # http://localhost:3000
 | PUT | `/s3/{bucket}/{key}` | Upload blob (S3) |
 | GET | `/s3/{bucket}/{key}` | Download blob (S3) |
 
+## AI Agent Guide
+
+Running VoidDB servers expose a machine-readable markdown guide for agents:
+
+```bash
+curl http://localhost:7700/skill.md
+```
+
+The same guide also lives in this repository at [`SKILL.md`](./SKILL.md).
+
 ## TypeScript ORM
 
 ```typescript

@@ -56,16 +56,16 @@ function CellValue({ value }: { value: unknown }) {
     const json = JSON.stringify(value, null, 2);
     const short = JSON.stringify(value);
     if (short.length <= 50) {
-      return <span className="text-xs font-mono text-amber-400">{short}</span>;
+      return <span className="block truncate text-xs font-mono text-amber-400">{short}</span>;
     }
     return (
       <span className="text-xs font-mono text-amber-400">
         {expanded ? (
-          <span className="block max-w-[32rem] whitespace-pre-wrap break-words cursor-pointer" onClick={() => setExpanded(false)}>
+          <span className="block max-w-[36rem] whitespace-pre-wrap break-words cursor-pointer" onClick={() => setExpanded(false)}>
             {json}
           </span>
         ) : (
-          <span className="block max-w-[26rem] truncate cursor-pointer hover:text-amber-300" onClick={() => setExpanded(true)}>
+          <span className="block truncate cursor-pointer hover:text-amber-300" onClick={() => setExpanded(true)}>
             {truncate(short, 50)}
           </span>
         )}
@@ -73,7 +73,7 @@ function CellValue({ value }: { value: unknown }) {
     );
   }
   return (
-    <span className="block max-w-[26rem] text-xs text-foreground whitespace-pre-wrap break-words">{String(value)}</span>
+    <span className="block truncate text-xs text-foreground" title={String(value)}>{String(value)}</span>
   );
 }
 
@@ -176,6 +176,25 @@ interface DocumentTableProps {
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
+function getColumnStyle(col: string): React.CSSProperties {
+  const normalized = col.toLowerCase();
+  if (col === "_id") return { width: "22rem" };
+  if (normalized.includes("created") || normalized.includes("updated") || normalized.includes("date")) {
+    return { width: "12rem" };
+  }
+  if (normalized.includes("name") || normalized.includes("title") || normalized.includes("email")) {
+    return { width: "14rem" };
+  }
+  if (normalized.includes("status") || normalized.includes("type") || normalized.includes("role")) {
+    return { width: "10rem" };
+  }
+  return { width: "12rem" };
+}
+
+function getColumnWidth(col: string): string {
+  return String(getColumnStyle(col).width ?? "12rem");
+}
+
 export function DocumentTable({ onEditDoc }: DocumentTableProps) {
   const {
     activeDb, activeCol, activeSchema,
@@ -265,6 +284,10 @@ export function DocumentTable({ onEditDoc }: DocumentTableProps) {
   const totalPages = Math.ceil(docCount / pageSize);
   const startRow = page * pageSize + 1;
   const endRow = Math.min((page + 1) * pageSize, docCount);
+  const gridTemplateColumns = useMemo(
+    () => ["2.5rem", ...columns.map(getColumnWidth), "2.5rem"].join(" "),
+    [columns]
+  );
 
   const toggleSort = (field: string) => {
     if (!sortBy || sortBy.field !== field) {
@@ -284,6 +307,21 @@ export function DocumentTable({ onEditDoc }: DocumentTableProps) {
       clearSelectedIds();
     } else {
       setSelectedIds(new Set(documents.map((d) => d._id)));
+    }
+  };
+
+  const handleAddColumn = () => {
+    const name = prompt("Column Name");
+    if (!name) return;
+    const type = prompt("Type (string, number, boolean, datetime)", "string") as any;
+    if (!type) return;
+    if (activeDb && activeCol && activeSchema) {
+      const next = { ...activeSchema };
+      next.fields = [...(next.fields || []), { name, type }];
+      useStore.getState().setActiveSchema(next);
+      api.setSchema(activeDb, activeCol, next).then(() => {
+        toast.success(`Column ${name} added`);
+      }).catch(() => toast.error("Failed to add column"));
     }
   };
 
@@ -311,13 +349,22 @@ export function DocumentTable({ onEditDoc }: DocumentTableProps) {
             </button>
           )}
         </div>
-        <button
-          onClick={fetchDocs}
-          disabled={dataLoading}
-          className="btn-ghost"
-        >
-          <RefreshCw className={cn("w-3.5 h-3.5", dataLoading && "animate-spin")} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleAddColumn}
+            className="btn-ghost"
+            title="Add Column"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={fetchDocs}
+            disabled={dataLoading}
+            className="btn-ghost"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", dataLoading && "animate-spin")} />
+          </button>
+        </div>
       </div>
 
       {/* Table */}
@@ -333,92 +380,75 @@ export function DocumentTable({ onEditDoc }: DocumentTableProps) {
             <p className="text-xs">Try changing your query or inserting documents</p>
           </div>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                {/* Select all checkbox */}
-                <th className="w-10 text-center !px-2">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleSelectAll}
-                    className="w-3.5 h-3.5 rounded border-border accent-neon-500 cursor-pointer"
-                  />
-                </th>
-                {columns.map((col) => (
-                  <th
-                    key={col}
-                    className="sortable group"
-                    onClick={() => toggleSort(col)}
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      {col}
-                      {sortBy?.field === col ? (
-                        sortBy.dir === "asc" ? (
-                          <ArrowUp className="w-3 h-3 text-neon-500" />
-                        ) : (
-                          <ArrowDown className="w-3 h-3 text-neon-500" />
-                        )
-                      ) : (
-                        <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-40 transition-opacity" />
-                      )}
-                    </span>
-                  </th>
-                ))}
-                <th className="w-6 cursor-pointer hover:bg-surface-3 transition-colors" title="Add Column" onClick={() => {
-                  const name = prompt("Column Name");
-                  if (!name) return;
-                  const type = prompt("Type (string, number, boolean, datetime)", "string") as any;
-                  if (!type) return;
-                  if (activeDb && activeCol && activeSchema) {
-                    const next = { ...activeSchema };
-                    next.fields = [...(next.fields || []), { name, type }];
-                    useStore.getState().setActiveSchema(next);
-                    api.setSchema(activeDb, activeCol, next).then(() => {
-                      toast.success(`Column ${name} added`);
-                    }).catch(() => toast.error("Failed to add column"));
-                  }
-                }}>
-                  <div className="flex items-center justify-center w-full h-full text-muted-foreground hover:text-neon-500">
-                    <Plus className="w-4 h-4" />
-                  </div>
-                </th>
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody>
-              <AnimatePresence>
-                {documents.map((doc, i) => {
-                  const rowMenuItems: ContextMenuEntry[] = [
-                    { label: "Edit document", icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => onEditDoc?.(doc), shortcut: "Enter" },
-                    { label: "Copy JSON", icon: <Copy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(JSON.stringify(doc, null, 2)); toast.success("JSON copied"); } },
-                    { label: "Copy ID", icon: <ClipboardCopy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(doc._id); toast.success("ID copied"); } },
-                    { separator: true },
-                    { label: "Delete", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => { if (activeDb && activeCol && confirm(`Delete ${doc._id}?`)) { api.deleteDocument(activeDb, activeCol, doc._id).then(() => { toast.success("Deleted"); fetchDocs(); }); } }, shortcut: "Del" },
-                  ];
-                  return (
-                  <ContextMenu key={doc._id} items={rowMenuItems} as="tr">
-                    <motion.tr
+          <div className="min-w-max">
+            <div
+              className="sticky top-0 z-10 grid border-b border-border bg-surface-1"
+              style={{ gridTemplateColumns }}
+            >
+              <div className="flex items-center justify-center px-2 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  className="w-3.5 h-3.5 rounded border-border accent-neon-500 cursor-pointer"
+                />
+              </div>
+              {columns.map((col) => (
+                <button
+                  key={col}
+                  type="button"
+                  className="group flex items-center gap-1.5 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                  onClick={() => toggleSort(col)}
+                >
+                  <span>{col}</span>
+                  {sortBy?.field === col ? (
+                    sortBy.dir === "asc" ? (
+                      <ArrowUp className="w-3 h-3 text-neon-500" />
+                    ) : (
+                      <ArrowDown className="w-3 h-3 text-neon-500" />
+                    )
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-40 transition-opacity" />
+                  )}
+                </button>
+              ))}
+              <div className="px-2 py-2.5" />
+            </div>
+
+            <AnimatePresence>
+              {documents.map((doc, i) => {
+                const rowMenuItems: ContextMenuEntry[] = [
+                  { label: "Edit document", icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => onEditDoc?.(doc), shortcut: "Enter" },
+                  { label: "Copy JSON", icon: <Copy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(JSON.stringify(doc, null, 2)); toast.success("JSON copied"); } },
+                  { label: "Copy ID", icon: <ClipboardCopy className="w-3.5 h-3.5" />, onClick: () => { navigator.clipboard.writeText(doc._id); toast.success("ID copied"); } },
+                  { separator: true },
+                  { label: "Delete", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => { if (activeDb && activeCol && confirm(`Delete ${doc._id}?`)) { api.deleteDocument(activeDb, activeCol, doc._id).then(() => { toast.success("Deleted"); fetchDocs(); }); } }, shortcut: "Del" },
+                ];
+
+                return (
+                  <ContextMenu key={doc._id} items={rowMenuItems}>
+                    <motion.div
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ delay: i * 0.01 }}
                       onClick={() => onEditDoc?.(doc)}
                       className={cn(
-                        "cursor-pointer group",
-                        selectedIds.has(doc._id) && "selected"
+                        "grid cursor-pointer border-b border-border/50 hover:bg-surface-3 group",
+                        selectedIds.has(doc._id) && "bg-neon-500/5"
                       )}
+                      style={{ gridTemplateColumns }}
                     >
-                      <td className="!px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center px-2 py-2" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedIds.has(doc._id)}
                           onChange={() => toggleSelectedId(doc._id)}
                           className="w-3.5 h-3.5 rounded border-border accent-neon-500 cursor-pointer"
                         />
-                      </td>
+                      </div>
                       {columns.map((col) => (
-                        <td key={col} className="min-w-[180px] max-w-[420px] align-top">
+                        <div key={col} className="px-3 py-2 text-sm">
                           <InlineCell
                             value={doc[col]}
                             field={col}
@@ -427,23 +457,22 @@ export function DocumentTable({ onEditDoc }: DocumentTableProps) {
                             col={activeCol}
                             onSaved={fetchDocs}
                           />
-                        </td>
+                        </div>
                       ))}
-                      <td className="!px-2">
+                      <div className="flex items-center justify-center px-2 py-2">
                         <button
                           onClick={(e) => handleDelete(doc, e)}
                           className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                      </td>
-                    </motion.tr>
+                      </div>
+                    </motion.div>
                   </ContextMenu>
-                  );
-                })}
-              </AnimatePresence>
-            </tbody>
-          </table>
+                );
+              })}
+            </AnimatePresence>
+          </div>
         )}
       </div>
 
