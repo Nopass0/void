@@ -6,10 +6,10 @@
 dist/
 
 # Data directories (never commit actual data)
-data/
-blob/
-backups/
-logs/
+/data/
+/blob/
+/backups/
+/logs/
 *.void
 
 # ACME certificate cache
