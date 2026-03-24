@@ -30,9 +30,13 @@ if (-not (Test-Path $bin)) {
     Write-Host "[run] Building VoidDB..." -ForegroundColor Cyan
     Push-Location $ROOT
     $env:CGO_ENABLED = "0"
-    go build -o $bin .\cmd\voiddb
+    # Use fallback proxies in case proxy.golang.org is unreachable.
+    $env:GOPROXY    = "https://goproxy.cn,https://goproxy.io,direct"
+    $env:GONOSUMDB  = "*"
+    go build -mod=mod -o $bin .\cmd\voiddb
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[run] Build failed." -ForegroundColor Red
+        Pop-Location
         exit 1
     }
     Pop-Location

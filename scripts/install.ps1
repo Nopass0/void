@@ -124,6 +124,9 @@ $envContent | Set-Content $envFile -Encoding UTF8 -NoNewline
 # ── Go modules ────────────────────────────────────────────────────────────────
 Write-Info "Downloading Go modules..."
 Push-Location $ROOT
+# Use fallback proxies in case proxy.golang.org is unreachable.
+$env:GOPROXY   = "https://goproxy.cn,https://goproxy.io,direct"
+$env:GONOSUMDB = "*"
 go mod download
 if ($LASTEXITCODE -ne 0) { Write-Fail "go mod download failed" }
 Write-OK "Go modules ready"
@@ -134,7 +137,7 @@ if (-not $NoBuild) {
     $gitDesc = "dev"
     try { $gitDesc = (git describe --tags --always 2>$null) } catch {}
     $env:CGO_ENABLED = "0"
-    go build -ldflags "-s -w -X main.version=$gitDesc" `
+    go build -mod=mod -ldflags "-s -w -X main.version=$gitDesc" `
              -o "$ROOT\voiddb.exe" `
              .\cmd\voiddb
     if ($LASTEXITCODE -ne 0) { Write-Fail "Build failed" }

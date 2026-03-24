@@ -16,7 +16,6 @@ data/acme-cache/
 # Go
 *.test
 vendor/
-go.sum
 
 # Node / Next.js
 node_modules/

@@ -30,8 +30,10 @@ cd "$ROOT_DIR"
 # Auto-build if binary is missing or source is newer.
 if [[ ! -f "$ROOT_DIR/voiddb" ]] || \
    find ./cmd ./internal -name "*.go" -newer "$ROOT_DIR/voiddb" 2>/dev/null | grep -q .; then
-  echo "[run] Building VoidDB…"
-  CGO_ENABLED=0 go build -o "$ROOT_DIR/voiddb" ./cmd/voiddb
+  echo "[run] Building VoidDB..."
+  export GOPROXY="${GOPROXY:-https://goproxy.cn,https://goproxy.io,direct}"
+  export GONOSUMDB="${GONOSUMDB:-*}"
+  CGO_ENABLED=0 go build -mod=mod -o "$ROOT_DIR/voiddb" ./cmd/voiddb
 fi
 
 if [[ "$DEV_MODE" == "true" ]]; then

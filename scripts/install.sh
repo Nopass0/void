@@ -102,14 +102,16 @@ if [[ ! -f "$ROOT_DIR/config.yaml" ]]; then
 fi
 
 # ── Go dependencies ───────────────────────────────────────────────────────────
-info "Downloading Go modules…"
+info "Downloading Go modules..."
+export GOPROXY="${GOPROXY:-https://goproxy.cn,https://goproxy.io,direct}"
+export GONOSUMDB="${GONOSUMDB:-*}"
 go mod download
 success "Go modules ready"
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 if [[ "$NO_BUILD" == "false" ]]; then
-  info "Building VoidDB binary…"
-  CGO_ENABLED=0 go build \
+  info "Building VoidDB binary..."
+  CGO_ENABLED=0 go build -mod=mod \
     -ldflags="-s -w -X main.version=$(git describe --tags --always 2>/dev/null || echo dev)" \
     -o "$ROOT_DIR/voiddb" \
     ./cmd/voiddb
