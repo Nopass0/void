@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/voiddb/void/internal/engine"
@@ -94,6 +95,7 @@ func (h *DBHandler) Realtime(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	ch := make(chan engine.Event, 64)
 	h.store.Hub().Subscribe(ch)
@@ -102,10 +104,19 @@ func (h *DBHandler) Realtime(w http.ResponseWriter, r *http.Request) {
 		zap.L().Info("realtime stream closed", zap.String("database", dbName), zap.String("remote_addr", r.RemoteAddr))
 	}()
 
+	_, _ = w.Write([]byte(": connected\n\n"))
+	flusher.Flush()
+
+	keepAlive := time.NewTicker(20 * time.Second)
+	defer keepAlive.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-keepAlive.C:
+			_, _ = w.Write([]byte(": keepalive\n\n"))
+			flusher.Flush()
 		case ev := <-ch:
 			if ev.Database == dbName {
 				data, _ := json.Marshal(ev)

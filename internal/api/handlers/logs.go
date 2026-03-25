@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/voiddb/void/internal/logs"
 	"go.uber.org/zap"
@@ -22,7 +23,7 @@ func NewLogsHandler() *LogsHandler {
 func (h *LogsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	limit := -1
 	skip := 0
-	
+
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if v, err := strconv.Atoi(l); err == nil {
 			limit = v
@@ -36,7 +37,7 @@ func (h *LogsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	data := logs.GlobalRing.Get(limit, skip)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"logs": data,
+		"logs":  data,
 		"count": logs.GlobalRing.Len(),
 	})
 }
@@ -44,9 +45,15 @@ func (h *LogsHandler) Get(w http.ResponseWriter, r *http.Request) {
 // Realtime handles GET /v1/logs/realtime.
 func (h *LogsHandler) Realtime(w http.ResponseWriter, r *http.Request) {
 	zap.L().Info("log stream opened", zap.String("remote_addr", r.RemoteAddr))
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	ch := logs.Subscribe()
 	defer func() {
@@ -54,10 +61,19 @@ func (h *LogsHandler) Realtime(w http.ResponseWriter, r *http.Request) {
 		zap.L().Info("log stream closed", zap.String("remote_addr", r.RemoteAddr))
 	}()
 
+	_, _ = fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+
+	keepAlive := time.NewTicker(20 * time.Second)
+	defer keepAlive.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-keepAlive.C:
+			_, _ = fmt.Fprint(w, ": keepalive\n\n")
+			flusher.Flush()
 		case entry, ok := <-ch:
 			if !ok {
 				return
@@ -65,9 +81,7 @@ func (h *LogsHandler) Realtime(w http.ResponseWriter, r *http.Request) {
 			data, err := json.Marshal(entry)
 			if err == nil {
 				fmt.Fprintf(w, "data: %s\n\n", string(data))
-				if flusher, ok := w.(http.Flusher); ok {
-					flusher.Flush()
-				}
+				flusher.Flush()
 			}
 		}
 	}
