@@ -2,7 +2,10 @@
 package middleware
 
 import (
+	"bufio"
 	"context"
+	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -134,6 +137,35 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return hijacker.Hijack()
+}
+
+func (r *statusRecorder) ReadFrom(src io.Reader) (int64, error) {
+	if readerFrom, ok := r.ResponseWriter.(io.ReaderFrom); ok {
+		return readerFrom.ReadFrom(src)
+	}
+	return io.Copy(r.ResponseWriter, src)
+}
+
+func (r *statusRecorder) Push(target string, opts *http.PushOptions) error {
+	pusher, ok := r.ResponseWriter.(http.Pusher)
+	if !ok {
+		return http.ErrNotSupported
+	}
+	return pusher.Push(target, opts)
 }
 
 // extractBearerToken pulls the token string from "Authorization: Bearer <tok>".
