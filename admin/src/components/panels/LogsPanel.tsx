@@ -96,7 +96,7 @@ export function LogsPanel() {
         </button>
       </div>
 
-      <Card className="flex-1 flex flex-col p-4 overflow-hidden gap-3">
+      <Card className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden gap-3">
         {/* Toolbar */}
         <div className="flex items-center gap-3">
           <div className="relative w-64">
@@ -126,12 +126,18 @@ export function LogsPanel() {
         </div>
 
         {/* Logs Table */}
-        <div className="flex-1 overflow-x-auto rounded border border-border bg-surface-1">
-          <table className="data-table">
+        <div className="flex-1 min-h-0 overflow-auto rounded border border-border bg-surface-1">
+          <table className="data-table w-full min-w-full">
+            <colgroup>
+              <col style={{ width: "14rem" }} />
+              <col style={{ width: "7rem" }} />
+              <col />
+              <col style={{ width: "24rem" }} />
+            </colgroup>
             <thead>
               <tr>
-                <th className="w-40">Timestamp</th>
-                <th className="w-24">Level</th>
+                <th>Timestamp</th>
+                <th>Level</th>
                 <th>Message</th>
                 <th>Context</th>
               </tr>
@@ -147,10 +153,10 @@ export function LogsPanel() {
                   <td className={`px-3 py-2 font-medium ${getLevelColor(log.level)} uppercase`}>
                     {log.level}
                   </td>
-                  <td className="px-3 py-2 text-foreground whitespace-pre-wrap break-words">
+                  <td className="px-3 py-2 text-foreground whitespace-pre-wrap break-words align-top">
                     {log.message}
                   </td>
-                  <td className="px-3 py-2 text-amber-500/80 truncate max-w-xs" title={JSON.stringify(log.fields || {})}>
+                  <td className="px-3 py-2 text-amber-500/80 whitespace-pre-wrap break-all align-top" title={JSON.stringify(log.fields || {})}>
                     {log.fields && Object.keys(log.fields).length > 0 ? JSON.stringify(log.fields) : "-"}
                   </td>
                 </tr>

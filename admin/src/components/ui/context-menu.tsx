@@ -144,13 +144,14 @@ interface ContextMenuProps {
   items: ContextMenuEntry[] | ((e: React.MouseEvent) => ContextMenuEntry[]);
   className?: string;
   as?: keyof JSX.IntrinsicElements;
+  asChild?: boolean;
 }
 
 /**
  * ContextMenu wraps children with a right-click handler.
  * Prevents native context menu and shows a custom one.
  */
-export function ContextMenu({ children, items, className, as: Tag = "div" }: ContextMenuProps) {
+export function ContextMenu({ children, items, className, as: Tag = "div", asChild = false }: ContextMenuProps) {
   const ctx = useContextMenu();
   const [menuItems, setMenuItems] = useState<ContextMenuEntry[]>([]);
 
@@ -164,6 +165,32 @@ export function ContextMenu({ children, items, className, as: Tag = "div" }: Con
   };
 
   const Component = Tag as React.ElementType;
+
+  if (asChild && React.isValidElement(children)) {
+    const child = children as React.ReactElement<{
+      className?: string;
+      onContextMenu?: (e: React.MouseEvent) => void;
+    }>;
+
+    return (
+      <>
+        {React.cloneElement(child, {
+          className: cn(child.props.className, className),
+          onContextMenu: (e: React.MouseEvent) => {
+            child.props.onContextMenu?.(e);
+            if (!e.defaultPrevented) {
+              handleContext(e);
+            }
+          },
+        })}
+        <AnimatePresence>
+          {ctx.visible && (
+            <MenuPanel x={ctx.x} y={ctx.y} items={menuItems} onClose={ctx.hide} />
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
 
   return (
     <>

@@ -8,7 +8,6 @@ import React, { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { UserPlus, Trash2, RefreshCw, Shield, X, Copy } from "lucide-react";
 import { toast } from "sonner";
-import { Card } from "@/components/ui/glass-card";
 import { useStore } from "@/store";
 import * as api from "@/lib/api";
 import type { User } from "@/lib/api";
@@ -65,8 +64,15 @@ export function UsersPanel() {
     }
   };
 
+  const formatCreatedAt = (createdAt: number) =>
+    new Date(createdAt * 1000).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    });
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-6xl">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-foreground">User Management</h2>
         <div className="flex items-center gap-2">
@@ -86,8 +92,14 @@ export function UsersPanel() {
       </div>
 
       {/* Users table */}
-      <div className="rounded-lg border border-border bg-surface-2 overflow-hidden">
-        <table className="data-table">
+      <div className="rounded-lg border border-border bg-surface-2 overflow-x-auto">
+        <table className="data-table w-full min-w-full">
+          <colgroup>
+            <col />
+            <col style={{ width: "11rem" }} />
+            <col style={{ width: "10rem" }} />
+            <col style={{ width: "3.5rem" }} />
+          </colgroup>
           <thead>
             <tr>
               <th>User</th>
@@ -106,14 +118,14 @@ export function UsersPanel() {
                 ] : []),
               ];
               return (
-              <ContextMenu key={u.id} items={userMenu} as="tr">
+              <ContextMenu key={u.id} items={userMenu} asChild>
                 <tr className="group">
                   <td>
                     <div className="flex items-center gap-3">
                       <div className="w-7 h-7 rounded-md bg-surface-4 flex items-center justify-center text-neon-500 text-xs font-bold uppercase">
                         {u.id[0]}
                       </div>
-                      <span className="font-medium text-sm">{u.id}</span>
+                      <span className="font-medium text-sm break-all">{u.id}</span>
                     </div>
                   </td>
                   <td>
@@ -124,14 +136,14 @@ export function UsersPanel() {
                       {u.role}
                     </span>
                   </td>
-                  <td className="text-muted-foreground text-xs">
-                    {new Date(u.created_at * 1000).toLocaleDateString()}
+                  <td className="text-muted-foreground text-xs whitespace-nowrap">
+                    {formatCreatedAt(u.created_at)}
                   </td>
-                  <td>
+                  <td className="text-right">
                     {me?.role === "admin" && u.id !== me.id && (
                       <button
                         onClick={() => handleDelete(u.id)}
-                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
+                        className="opacity-0 group-hover:opacity-100 inline-flex text-muted-foreground hover:text-red-400 transition-all"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
