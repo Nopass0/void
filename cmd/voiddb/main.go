@@ -14,8 +14,8 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -24,6 +24,7 @@ import (
 
 	"github.com/voiddb/void/internal/api"
 	"github.com/voiddb/void/internal/auth"
+	"github.com/voiddb/void/internal/backup"
 	"github.com/voiddb/void/internal/blob"
 	"github.com/voiddb/void/internal/config"
 	"github.com/voiddb/void/internal/engine"
@@ -159,8 +160,14 @@ func main() {
 	memCache := kvcache.New()
 	defer memCache.Close()
 
+	backupSvc, err := backup.NewService(store, cfg, *configPath, version)
+	if err != nil {
+		logger.Fatal("start backup service", zap.Error(err))
+	}
+	defer backupSvc.Close()
+
 	// --- HTTP Router ---------------------------------------------------------
-	router := api.NewRouter(store, authSvc, blobStore, memCache, api.RouterOptions{
+	router := api.NewRouter(store, authSvc, blobStore, backupSvc, memCache, api.RouterOptions{
 		CORSOrigins: cfg.Server.CORSOrigins,
 		S3Region:    cfg.Blob.S3Region,
 	})

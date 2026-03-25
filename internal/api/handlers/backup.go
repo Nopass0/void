@@ -7,9 +7,11 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/voiddb/void/internal/backup"
 	"github.com/voiddb/void/internal/engine"
 	"github.com/voiddb/void/internal/engine/types"
@@ -18,19 +20,94 @@ import (
 // BackupHandler handles backup and restore requests.
 type BackupHandler struct {
 	store         *engine.Store
+	service       *backup.Service
 	serverVersion string
 }
 
 // NewBackupHandler creates a BackupHandler.
 // serverVersion is embedded in every archive manifest.
-func NewBackupHandler(store *engine.Store, serverVersion string) *BackupHandler {
-	return &BackupHandler{store: store, serverVersion: serverVersion}
+func NewBackupHandler(store *engine.Store, service *backup.Service, serverVersion string) *BackupHandler {
+	return &BackupHandler{store: store, service: service, serverVersion: serverVersion}
 }
 
 // backupRequest is the optional JSON body for POST /v1/backup.
 type backupRequest struct {
 	// Databases to include. Empty slice or missing field = export all.
 	Databases []string `json:"databases"`
+}
+
+// GetSettings returns the current backup settings.
+func (h *BackupHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.service.GetSettings())
+}
+
+// UpdateSettings validates and persists backup settings.
+func (h *BackupHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var req backup.Settings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid backup settings JSON")
+		return
+	}
+	settings, err := h.service.UpdateSettings(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+// ListFiles returns stored backup archives.
+func (h *BackupHandler) ListFiles(w http.ResponseWriter, r *http.Request) {
+	files, err := h.service.ListFiles()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"files": files})
+}
+
+// CreateFile creates a backup archive on the server filesystem.
+func (h *BackupHandler) CreateFile(w http.ResponseWriter, r *http.Request) {
+	var req backupRequest
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid backup request JSON")
+			return
+		}
+	}
+	info, err := h.service.CreateBackup(req.Databases)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, info)
+}
+
+// DownloadFile streams a stored backup archive.
+func (h *BackupHandler) DownloadFile(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+	file, info, err := h.service.OpenFile(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	defer file.Close()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, info.Name()))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, file)
+}
+
+// DeleteFile removes a stored backup archive from the server filesystem.
+func (h *BackupHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+	if err := h.service.DeleteFile(name); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Export streams a .void archive to the HTTP response body.

@@ -21,11 +21,13 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
-	"go.uber.org/zap"
 	"github.com/voiddb/void/internal/engine"
 	"github.com/voiddb/void/internal/engine/types"
+	"github.com/voiddb/void/internal/schemafile"
+	"go.uber.org/zap"
 )
 
 // DBHandler handles all document-store HTTP requests.
@@ -183,6 +185,61 @@ func (h *DBHandler) SetSchema(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, schema)
 }
 
+// ExportDatabaseSchema renders a Prisma-like schema file for one database.
+func (h *DBHandler) ExportDatabaseSchema(w http.ResponseWriter, r *http.Request) {
+	dbName := mux.Vars(r)["db"]
+	project := &schemafile.Project{}
+	usedNames := make(map[string]int)
+
+	for _, colName := range h.store.ListCollections(dbName) {
+		schema := h.store.DB(dbName).Collection(colName).Schema()
+		if schema == nil {
+			continue
+		}
+		copySchema := *schema.Normalize()
+		copySchema.Database = dbName
+		copySchema.Collection = colName
+		copySchema.Model = uniqueModelNameForExport(defaultModelNameForExport(dbName, colName), usedNames)
+		project.Models = append(project.Models, schemafile.Model{
+			Name:   copySchema.Model,
+			Schema: &copySchema,
+		})
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(schemafile.Render(project)))
+}
+
+// ExportCollectionSchema renders a Prisma-like schema block for one collection.
+func (h *DBHandler) ExportCollectionSchema(w http.ResponseWriter, r *http.Request) {
+	dbName := mux.Vars(r)["db"]
+	colName := mux.Vars(r)["col"]
+	schema := h.store.DB(dbName).Collection(colName).Schema()
+	if schema == nil {
+		writeError(w, http.StatusNotFound, "schema not found")
+		return
+	}
+
+	copySchema := *schema.Normalize()
+	copySchema.Database = dbName
+	copySchema.Collection = colName
+	if copySchema.Model == "" {
+		copySchema.Model = defaultModelNameForExport(dbName, colName)
+	}
+
+	project := &schemafile.Project{
+		Models: []schemafile.Model{{
+			Name:   copySchema.Model,
+			Schema: &copySchema,
+		}},
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(schemafile.Render(project)))
+}
+
 // --- Document endpoints ------------------------------------------------------
 
 // InsertDocument handles POST /v1/databases/{db}/{col}.
@@ -311,7 +368,7 @@ func (h *DBHandler) QueryDocuments(w http.ResponseWriter, r *http.Request) {
 	if spec.Where != nil {
 		q = q.WhereNode(parseQueryNode(*spec.Where))
 	}
-	
+
 	for _, inc := range spec.Include {
 		q = q.Include(engine.JoinSpec{
 			As:         inc.As,
@@ -479,6 +536,59 @@ func valueToJSON(v types.Value) interface{} {
 		return map[string]string{"_blob_bucket": bucket, "_blob_key": key}
 	}
 	return nil
+}
+
+func defaultModelNameForExport(dbName, colName string) string {
+	base := toPascalForExport(colName)
+	if base == "" {
+		base = "Model"
+	}
+	if dbName == "" || dbName == "default" {
+		return base
+	}
+	return toPascalForExport(dbName) + base
+}
+
+func uniqueModelNameForExport(name string, used map[string]int) string {
+	if used[name] == 0 {
+		used[name] = 1
+		return name
+	}
+	used[name]++
+	return name + strconvItoaForExport(used[name])
+}
+
+func toPascalForExport(value string) string {
+	var b strings.Builder
+	upperNext := true
+	for _, r := range value {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
+			if upperNext {
+				b.WriteString(strings.ToUpper(string(r)))
+				upperNext = false
+			} else {
+				b.WriteRune(r)
+			}
+		default:
+			upperNext = true
+		}
+	}
+	return b.String()
+}
+
+func strconvItoaForExport(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	var digits [20]byte
+	pos := len(digits)
+	for v > 0 {
+		pos--
+		digits[pos] = byte('0' + (v % 10))
+		v /= 10
+	}
+	return string(digits[pos:])
 }
 
 // jsonToValue converts a JSON-decoded interface{} to a types.Value.

@@ -8,6 +8,7 @@ import (
 	"github.com/voiddb/void/internal/api/handlers"
 	"github.com/voiddb/void/internal/api/middleware"
 	"github.com/voiddb/void/internal/auth"
+	"github.com/voiddb/void/internal/backup"
 	"github.com/voiddb/void/internal/blob"
 	"github.com/voiddb/void/internal/engine"
 	"github.com/voiddb/void/internal/kvcache"
@@ -26,6 +27,7 @@ func NewRouter(
 	store *engine.Store,
 	authSvc *auth.Service,
 	blobStore *blob.Store,
+	backupSvc *backup.Service,
 	cache *kvcache.Cache,
 	opts RouterOptions,
 ) http.Handler {
@@ -40,13 +42,14 @@ func NewRouter(
 	r.Use(middleware.JSON)
 
 	// Instantiate handlers.
-	authH   := handlers.NewAuthHandler(authSvc)
-	dbH     := handlers.NewDBHandler(store)
-	blobH   := handlers.NewBlobHandler(blobStore, opts.S3Region)
-	backupH := handlers.NewBackupHandler(store, "1.0.0")
-	cacheH  := handlers.NewCacheHandler(cache)
-	logsH   := handlers.NewLogsHandler()
-	metaH   := handlers.NewMetaHandler()
+	authH := handlers.NewAuthHandler(authSvc)
+	dbH := handlers.NewDBHandler(store)
+	blobH := handlers.NewBlobHandler(blobStore, opts.S3Region)
+	backupH := handlers.NewBackupHandler(store, backupSvc, "1.0.0")
+	cacheH := handlers.NewCacheHandler(cache)
+	logsH := handlers.NewLogsHandler()
+	metaH := handlers.NewMetaHandler()
+	importH := handlers.NewImportHandler(store)
 
 	// --- Public auth routes --------------------------------------------------
 	pub := r.PathPrefix("/v1/auth").Subrouter()
@@ -83,16 +86,18 @@ func NewRouter(
 	api.HandleFunc("/databases", dbH.ListDatabases).Methods(http.MethodGet)
 	api.HandleFunc("/databases", dbH.CreateDatabase).Methods(http.MethodPost)
 	api.HandleFunc("/databases/{db}", dbH.DeleteDatabase).Methods(http.MethodDelete)
+	api.HandleFunc("/databases/{db}/schema/export", dbH.ExportDatabaseSchema).Methods(http.MethodGet)
 	api.HandleFunc("/databases/{db}/realtime", dbH.Realtime).Methods(http.MethodGet)
-	
+
 	// Collection management.
 	api.HandleFunc("/databases/{db}/collections", dbH.ListCollections).Methods(http.MethodGet)
 	api.HandleFunc("/databases/{db}/collections", dbH.CreateCollection).Methods(http.MethodPost)
 	api.HandleFunc("/databases/{db}/collections/{col}", dbH.DeleteCollection).Methods(http.MethodDelete)
-	
+
 	// Schema management.
 	api.HandleFunc("/databases/{db}/{col}/schema", dbH.GetSchema).Methods(http.MethodGet)
 	api.HandleFunc("/databases/{db}/{col}/schema", dbH.SetSchema).Methods(http.MethodPut)
+	api.HandleFunc("/databases/{db}/{col}/schema/export", dbH.ExportCollectionSchema).Methods(http.MethodGet)
 
 	// Document CRUD.
 	api.HandleFunc("/databases/{db}/{col}/query", dbH.QueryDocuments).Methods(http.MethodPost)
@@ -107,6 +112,17 @@ func NewRouter(
 	api.HandleFunc("/cache/{key:.*}", cacheH.Get).Methods(http.MethodGet)
 	api.HandleFunc("/cache/{key:.*}", cacheH.Set).Methods(http.MethodPost)
 	api.HandleFunc("/cache/{key:.*}", cacheH.Delete).Methods(http.MethodDelete)
+
+	// Admin operations.
+	adminAPI := api.NewRoute().Subrouter()
+	adminAPI.Use(middleware.RequireRole(auth.RoleAdmin))
+	adminAPI.HandleFunc("/settings/backup", backupH.GetSettings).Methods(http.MethodGet)
+	adminAPI.HandleFunc("/settings/backup", backupH.UpdateSettings).Methods(http.MethodPut)
+	adminAPI.HandleFunc("/backups", backupH.ListFiles).Methods(http.MethodGet)
+	adminAPI.HandleFunc("/backups", backupH.CreateFile).Methods(http.MethodPost)
+	adminAPI.HandleFunc("/backups/{name}", backupH.DownloadFile).Methods(http.MethodGet)
+	adminAPI.HandleFunc("/backups/{name}", backupH.DeleteFile).Methods(http.MethodDelete)
+	adminAPI.HandleFunc("/import/postgres", importH.ImportPostgres).Methods(http.MethodPost)
 
 	// --- S3-compatible blob API (separate path prefix) -----------------------
 	s3 := r.PathPrefix("/s3").Subrouter()

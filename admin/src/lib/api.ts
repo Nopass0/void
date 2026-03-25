@@ -73,13 +73,52 @@ export interface EngineStats {
 /** Collection Schema Definitions */
 export interface SchemaField {
   name: string;
-  type: "string" | "number" | "boolean" | "datetime" | "array" | "object";
+  type: "string" | "number" | "boolean" | "datetime" | "array" | "object" | "relation";
   required?: boolean;
   default?: string;
+  default_expr?: string;
+  prisma_type?: string;
+  unique?: boolean;
+  is_id?: boolean;
+  list?: boolean;
+  virtual?: boolean;
+  auto_updated_at?: boolean;
+  mapped_name?: string;
 }
 
 export interface Schema {
+  database?: string;
+  collection?: string;
+  model?: string;
   fields: SchemaField[];
+  indexes?: Array<{
+    name?: string;
+    fields: string[];
+    unique?: boolean;
+    primary?: boolean;
+  }>;
+}
+
+export interface BackupSettings {
+  dir: string;
+  retain: number;
+  schedule_cron: string;
+  next_run?: string;
+}
+
+export interface BackupFileInfo {
+  name: string;
+  size: number;
+  modified_at: string;
+}
+
+export interface PostgresImportResult {
+  database: string;
+  source: string;
+  schema: string;
+  total_rows: number;
+  total_tables: number;
+  tables: Array<{ name: string; rows: number }>;
 }
 
 /** Blob object metadata. */
@@ -216,6 +255,10 @@ export async function createDatabase(name: string): Promise<void> {
   await http.post("/v1/databases", { name });
 }
 
+export async function deleteDatabase(name: string): Promise<void> {
+  await http.delete(`/v1/databases/${encodeURIComponent(name)}`);
+}
+
 export async function listCollections(db: string): Promise<string[]> {
   const res = await http.get<{ collections: string[] }>(`/v1/databases/${db}/collections`);
   return res.data.collections || [];
@@ -225,6 +268,10 @@ export async function createCollection(db: string, name: string): Promise<void> 
   await http.post(`/v1/databases/${db}/collections`, { name });
 }
 
+export async function deleteCollection(db: string, name: string): Promise<void> {
+  await http.delete(`/v1/databases/${encodeURIComponent(db)}/collections/${encodeURIComponent(name)}`);
+}
+
 export async function getSchema(db: string, col: string): Promise<Schema> {
   const res = await http.get<Schema>(`/v1/databases/${db}/${col}/schema`);
   return res.data;
@@ -232,6 +279,69 @@ export async function getSchema(db: string, col: string): Promise<Schema> {
 
 export async function setSchema(db: string, col: string, schema: Schema): Promise<Schema> {
   const res = await http.put<Schema>(`/v1/databases/${db}/${col}/schema`, schema);
+  return res.data;
+}
+
+export async function exportDatabaseSchema(db: string): Promise<string> {
+  const res = await http.get<string>(`/v1/databases/${encodeURIComponent(db)}/schema/export`, {
+    responseType: "text" as any,
+  });
+  return res.data;
+}
+
+export async function exportCollectionSchema(db: string, col: string): Promise<string> {
+  const res = await http.get<string>(`/v1/databases/${encodeURIComponent(db)}/${encodeURIComponent(col)}/schema/export`, {
+    responseType: "text" as any,
+  });
+  return res.data;
+}
+
+export async function getBackupSettings(): Promise<BackupSettings> {
+  const res = await http.get<BackupSettings>("/v1/settings/backup");
+  return res.data;
+}
+
+export async function updateBackupSettings(settings: BackupSettings): Promise<BackupSettings> {
+  const res = await http.put<BackupSettings>("/v1/settings/backup", settings);
+  return res.data;
+}
+
+export async function listBackupFiles(): Promise<BackupFileInfo[]> {
+  const res = await http.get<{ files: BackupFileInfo[] }>("/v1/backups");
+  return res.data.files || [];
+}
+
+export async function createBackupFile(databases?: string[]): Promise<BackupFileInfo> {
+  const res = await http.post<BackupFileInfo>("/v1/backups", { databases: databases || [] });
+  return res.data;
+}
+
+export async function deleteBackupFile(name: string): Promise<void> {
+  await http.delete(`/v1/backups/${encodeURIComponent(name)}`);
+}
+
+export async function downloadBackupFile(name: string): Promise<void> {
+  const res = await http.get<Blob>(`/v1/backups/${encodeURIComponent(name)}`, {
+    responseType: "blob",
+  });
+  const blob = new Blob([res.data], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function importPostgresDatabase(payload: {
+  source_url: string;
+  target_database?: string;
+  source_schema?: string;
+  drop_existing?: boolean;
+}): Promise<PostgresImportResult> {
+  const res = await http.post<PostgresImportResult>("/v1/import/postgres", payload);
   return res.data;
 }
 
