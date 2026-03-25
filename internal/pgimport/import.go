@@ -57,6 +57,7 @@ type importedTable struct {
 	Schema      *engine.Schema
 	SinglePK    string
 	CompositePK []string
+	Columns     []postgresColumn
 }
 
 // ImportURL imports one PostgreSQL schema into a VoidDB database.
@@ -301,6 +302,7 @@ func buildImportedTable(targetDB, tableName string, columns []postgresColumn, co
 		}).Normalize(),
 		SinglePK:    singlePK,
 		CompositePK: compositePK,
+		Columns:     append([]postgresColumn(nil), columns...),
 	}
 }
 
@@ -335,49 +337,7 @@ func postgresTypeMapping(column postgresColumn) (engine.FieldType, string, bool)
 }
 
 func postgresScalarType(dataType, udtName string) (engine.FieldType, string) {
-	key := strings.ToLower(strings.TrimSpace(dataType))
-	udt := strings.ToLower(strings.TrimSpace(udtName))
-	switch key {
-	case "smallint", "integer":
-		return engine.TypeNumber, "Int"
-	case "bigint":
-		return engine.TypeNumber, "BigInt"
-	case "real", "double precision":
-		return engine.TypeNumber, "Float"
-	case "numeric", "decimal":
-		return engine.TypeNumber, "Decimal"
-	case "boolean":
-		return engine.TypeBoolean, "Boolean"
-	case "json", "jsonb":
-		return engine.TypeObject, "Json"
-	case "date", "timestamp without time zone", "timestamp with time zone", "time without time zone", "time with time zone":
-		return engine.TypeDateTime, "DateTime"
-	case "bytea":
-		return engine.TypeString, "Bytes"
-	case "uuid":
-		return engine.TypeString, "String"
-	}
-
-	switch udt {
-	case "int2", "int4":
-		return engine.TypeNumber, "Int"
-	case "int8":
-		return engine.TypeNumber, "BigInt"
-	case "float4", "float8":
-		return engine.TypeNumber, "Float"
-	case "numeric":
-		return engine.TypeNumber, "Decimal"
-	case "bool":
-		return engine.TypeBoolean, "Boolean"
-	case "json", "jsonb":
-		return engine.TypeObject, "Json"
-	case "date", "timestamp", "timestamptz", "time", "timetz":
-		return engine.TypeDateTime, "DateTime"
-	case "bytea":
-		return engine.TypeString, "Bytes"
-	}
-
-	return engine.TypeString, "String"
+	return MapScalarType(dataType, udtName)
 }
 
 func postgresDefaultExpr(column postgresColumn) *string {
@@ -451,6 +411,9 @@ func importRows(ctx context.Context, src *sql.DB, col *engine.Collection, source
 		if err != nil {
 			return count, fmt.Errorf("decode %s row %d: %w", table.Name, count+1, err)
 		}
+		if err := normalizeImportedRow(table, row); err != nil {
+			return count, fmt.Errorf("normalize %s row %d: %w", table.Name, count+1, err)
+		}
 		doc := &types.Document{
 			ID:     deriveImportedRowID(table, row, count+1),
 			Fields: make(map[string]types.Value, len(row)),
@@ -477,6 +440,21 @@ func decodeImportedRow(raw string) (map[string]interface{}, error) {
 		return nil, err
 	}
 	return row, nil
+}
+
+func normalizeImportedRow(table importedTable, row map[string]interface{}) error {
+	for _, column := range table.Columns {
+		value, ok := row[column.Name]
+		if !ok || value == nil {
+			continue
+		}
+		normalized, err := NormalizeColumnValue(column.DataType, column.UDTName, value)
+		if err != nil {
+			return fmt.Errorf("field %s: %w", column.Name, err)
+		}
+		row[column.Name] = normalized
+	}
+	return nil
 }
 
 func deriveImportedRowID(table importedTable, row map[string]interface{}, rowNumber int) string {
