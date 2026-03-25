@@ -40,16 +40,32 @@ export interface QueryFilter {
   value: unknown;
 }
 
+export interface QueryLogicNode {
+  AND?: QueryNode[];
+  OR?: QueryNode[];
+}
+
+export type QueryNode = QueryFilter | QueryLogicNode;
+
 /** A sort specification. */
 export interface QuerySort {
   field: string;
   dir: "asc" | "desc";
 }
 
+export interface QueryInclude {
+  as: string;
+  relation: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many";
+  target_col: string;
+  local_key: string;
+  foreign_key: string;
+}
+
 /** Full query DSL sent to POST /databases/{db}/{col}/query. */
 export interface QuerySpec {
-  where?: QueryFilter[];
+  where?: QueryNode;
   order_by?: QuerySort[];
+  include?: QueryInclude[];
   limit?: number;
   skip?: number;
 }
@@ -84,6 +100,14 @@ export interface SchemaField {
   virtual?: boolean;
   auto_updated_at?: boolean;
   mapped_name?: string;
+  relation?: {
+    model?: string;
+    fields?: string[];
+    references?: string[];
+    on_delete?: string;
+    on_update?: string;
+    name?: string;
+  };
 }
 
 export interface Schema {

@@ -419,6 +419,9 @@ func importRows(ctx context.Context, src *sql.DB, col *engine.Collection, source
 			Fields: make(map[string]types.Value, len(row)),
 		}
 		for key, value := range row {
+			if table.SinglePK != "" && key == table.SinglePK {
+				continue
+			}
 			doc.Fields[key] = jsonToValue(value)
 		}
 		if _, err := col.Insert(doc); err != nil {

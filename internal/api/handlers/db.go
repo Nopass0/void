@@ -392,6 +392,17 @@ func (h *DBHandler) QueryDocuments(w http.ResponseWriter, r *http.Request) {
 		q = q.Skip(spec.Skip)
 	}
 
+	countQuery := engine.NewQuery()
+	if spec.Where != nil {
+		countQuery = countQuery.WhereNode(parseQueryNode(*spec.Where))
+	}
+
+	totalCount, err := col.Count(countQuery)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	docs, err := col.Find(q)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -404,7 +415,7 @@ func (h *DBHandler) QueryDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"results": out,
-		"count":   len(out),
+		"count":   totalCount,
 	})
 }
 

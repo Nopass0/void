@@ -1,14 +1,15 @@
-/**
- * @fileoverview DataPanel – table-focused CRUD interface for collections.
- * Features: visual filter bar, column management, dark CodeMirror modal.
- */
-
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Plus, X, Save, Loader2, Filter, Search, SlidersHorizontal, Columns3,
+  Plus,
+  X,
+  Save,
+  Loader2,
+  Search,
+  Sparkles,
+  SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useStore } from "@/store";
@@ -17,212 +18,388 @@ import { Card } from "@/components/ui/glass-card";
 import * as api from "@/lib/api";
 import type { Document } from "@/lib/api";
 
-// ── Visual Filter Builder ─────────────────────────────────────────────────────
-
 interface FilterRule {
+  id: string;
   field: string;
-  op: string;
+  op: api.QueryFilter["op"];
   value: string;
 }
 
-const OPS = [
-  { value: "eq", label: "=" },
-  { value: "ne", label: "≠" },
+const FILTER_OPERATORS: Array<{ value: api.QueryFilter["op"]; label: string }> = [
+  { value: "eq", label: "is" },
+  { value: "ne", label: "is not" },
   { value: "gt", label: ">" },
-  { value: "gte", label: "≥" },
+  { value: "gte", label: ">=" },
   { value: "lt", label: "<" },
-  { value: "lte", label: "≤" },
+  { value: "lte", label: "<=" },
   { value: "contains", label: "contains" },
   { value: "starts_with", label: "starts with" },
+  { value: "in", label: "in" },
 ];
 
-function FilterBar() {
-  const { queryText, setQueryText, setPage } = useStore();
-  const [filters, setFilters] = useState<FilterRule[]>([]);
-  const [quickSearch, setQuickSearch] = useState("");
-
-  const applyFilters = () => {
-    const where = filters
-      .filter((f) => f.field && f.value)
-      .map((f) => {
-        let val: unknown = f.value;
-        if (val === "true") val = true;
-        else if (val === "false") val = false;
-        else if (!isNaN(Number(val)) && val !== "") val = Number(val);
-        return { field: f.field, op: f.op, value: val };
-      });
-    setQueryText(JSON.stringify({ where }));
-    setPage(0);
+function nextRule(field = "", op: api.QueryFilter["op"] = "eq", value = ""): FilterRule {
+  return {
+    id: typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`,
+    field,
+    op,
+    value,
   };
-
-  const addFilter = () => {
-    setFilters([...filters, { field: "", op: "eq", value: "" }]);
-  };
-
-  const removeFilter = (i: number) => {
-    const next = [...filters];
-    next.splice(i, 1);
-    setFilters(next);
-    if (next.length === 0) {
-      setQueryText("{}");
-      setPage(0);
-    }
-  };
-
-  const updateFilter = (i: number, key: keyof FilterRule, val: string) => {
-    const next = [...filters];
-    next[i] = { ...next[i], [key]: val };
-    setFilters(next);
-  };
-
-  useEffect(() => {
-    if (filters.length > 0) {
-      const timer = setTimeout(applyFilters, 400);
-      return () => clearTimeout(timer);
-    }
-  }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleQuickSearch = (val: string) => {
-    setQuickSearch(val);
-    if (!val) {
-      setQueryText("{}");
-      setPage(0);
-      return;
-    }
-    // Quick search searches _id field
-    setQueryText(JSON.stringify({ where: [{ field: "_id", op: "contains", value: val }] }));
-    setPage(0);
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        {/* Quick search */}
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <input
-            type="text"
-            value={quickSearch}
-            onChange={(e) => handleQuickSearch(e.target.value)}
-            placeholder="Search by ID..."
-            className="input-field !pl-8 text-xs !py-1.5"
-          />
-        </div>
-
-        {/* Add filter */}
-        <button onClick={addFilter} className="btn-ghost text-xs">
-          <Filter className="w-3 h-3" />
-          Add Filter
-        </button>
-
-        {filters.length > 0 && (
-          <button
-            onClick={() => { setFilters([]); setQueryText("{}"); setPage(0); }}
-            className="btn-ghost text-xs text-red-400"
-          >
-            Clear All
-          </button>
-        )}
-      </div>
-
-      {/* Filter rows */}
-      <AnimatePresence>
-        {filters.map((f, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="flex items-center gap-2"
-          >
-            <span className="text-[10px] text-muted-foreground w-10">{i === 0 ? "WHERE" : "AND"}</span>
-            <input
-              type="text"
-              value={f.field}
-              onChange={(e) => updateFilter(i, "field", e.target.value)}
-              placeholder="field name"
-              className="input-field text-xs !py-1.5 w-36"
-            />
-            <select
-              value={f.op}
-              onChange={(e) => updateFilter(i, "op", e.target.value)}
-              className="select-field text-xs !py-1.5 !w-auto"
-            >
-              {OPS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            <input
-              type="text"
-              value={f.value}
-              onChange={(e) => updateFilter(i, "value", e.target.value)}
-              placeholder="value"
-              className="input-field text-xs !py-1.5 flex-1"
-            />
-            <button onClick={() => removeFilter(i)} className="btn-ghost !p-1 text-muted-foreground hover:text-red-400">
-              <X className="w-3 h-3" />
-            </button>
-          </motion.div>
-        ))}
-      </AnimatePresence>
-    </div>
-  );
 }
 
-// ── Dark CodeMirror Editor ────────────────────────────────────────────────────
+function storageFieldName(field: api.SchemaField): string {
+  if (field.mapped_name) return field.mapped_name;
+  if (field.is_id) return "_id";
+  return field.name;
+}
 
-function DarkEditor({
-  value,
-  onChange,
-  height = "300px",
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  height?: string;
-}) {
-  const [CodeMirror, setCodeMirror] = useState<React.ComponentType<any> | null>(null);
-  const [theme, setTheme] = useState<any>(undefined);
-  const [jsonExt, setJsonExt] = useState<any[]>([]);
-  const loaded = useRef(false);
+function queryFieldName(field: string, schema: api.Schema | null): string {
+  if (field === "_id") return "_id";
+  const schemaField = schema?.fields?.find((item) => item.name === field || storageFieldName(item) === field);
+  return schemaField ? storageFieldName(schemaField) : field;
+}
 
-  useEffect(() => {
-    if (loaded.current) return;
-    loaded.current = true;
-    Promise.all([
-      import("@uiw/react-codemirror").then((m) => m.default),
-      import("@codemirror/theme-one-dark").then((m) => m.oneDark),
-      import("@codemirror/lang-json").then((m) => [m.json()]),
-    ]).then(([cm, t, ext]) => {
-      setCodeMirror(() => cm);
-      setTheme(t);
-      setJsonExt(ext);
+function displayFieldName(field: string, schema: api.Schema | null): string {
+  if (field === "_id") return "_id";
+  const schemaField = schema?.fields?.find((item) => item.name === field || storageFieldName(item) === field);
+  return schemaField?.name ?? field;
+}
+
+function fieldTypeFor(field: string, schema: api.Schema | null): api.SchemaField["type"] | "string" {
+  if (field === "_id") return "string";
+  const schemaField = schema?.fields?.find((item) => item.name === field || storageFieldName(item) === field);
+  if (!schemaField) return "string";
+  if (schemaField.is_id || storageFieldName(schemaField) === "_id") return "string";
+  return schemaField.type;
+}
+
+function datetimeToInput(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function inputToDatetime(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString();
+}
+
+function stringifyFilterValue(value: unknown, type: api.SchemaField["type"] | "string"): string {
+  if (value === null || value === undefined) return "";
+  if (type === "datetime" && typeof value === "string") {
+    return datetimeToInput(value);
+  }
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function coerceFilterValue(raw: string, type: api.SchemaField["type"] | "string", op: api.QueryFilter["op"]): unknown {
+  if (type === "number") {
+    const num = Number(raw);
+    return Number.isNaN(num) ? raw : num;
+  }
+  if (type === "boolean") {
+    return raw === "true";
+  }
+  if (type === "datetime") {
+    return inputToDatetime(raw);
+  }
+  if (op === "in") {
+    return raw
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return raw;
+}
+
+function leafFilter(node: api.QueryNode | undefined): api.QueryFilter | null {
+  if (!node) return null;
+  if ("field" in node && "op" in node) return node;
+  return null;
+}
+
+function simpleFiltersFromQuery(queryText: string, schema: api.Schema | null): {
+  quickSearch: string;
+  filters: FilterRule[];
+} {
+  try {
+    const parsed = JSON.parse(queryText) as api.QuerySpec;
+    const nodes: api.QueryFilter[] = [];
+    let quickSearch = "";
+    const where = parsed.where;
+    if (!where) {
+      return { quickSearch, filters: [] };
+    }
+
+    if ("field" in where && "op" in where) {
+      nodes.push(where);
+    } else if (Array.isArray(where.AND)) {
+      for (const child of where.AND) {
+        const leaf = leafFilter(child);
+        if (leaf) nodes.push(leaf);
+      }
+    } else {
+      return { quickSearch, filters: [] };
+    }
+
+    const filters = nodes.flatMap((node) => {
+      if (node.field === "_id" && node.op === "contains" && typeof node.value === "string") {
+        quickSearch = node.value;
+        return [];
+      }
+      const type = fieldTypeFor(node.field, schema);
+      return [nextRule(displayFieldName(node.field, schema), node.op, stringifyFilterValue(node.value, type))];
     });
-  }, []);
 
-  if (!CodeMirror) {
+    return { quickSearch, filters };
+  } catch {
+    return { quickSearch: "", filters: [] };
+  }
+}
+
+function buildQuerySpec(
+  quickSearch: string,
+  rules: FilterRule[],
+  schema: api.Schema | null
+): api.QuerySpec {
+  const predicates: api.QueryFilter[] = [];
+
+  if (quickSearch.trim()) {
+    predicates.push({
+      field: "_id",
+      op: "contains",
+      value: quickSearch.trim(),
+    });
+  }
+
+  for (const rule of rules) {
+    if (!rule.field.trim()) continue;
+    if (rule.value === "" && rule.op !== "eq" && rule.op !== "ne") continue;
+    const type = fieldTypeFor(rule.field, schema);
+    predicates.push({
+      field: queryFieldName(rule.field, schema),
+      op: rule.op,
+      value: coerceFilterValue(rule.value, type, rule.op),
+    });
+  }
+
+  if (predicates.length === 0) {
+    return {};
+  }
+  if (predicates.length === 1) {
+    return { where: predicates[0] };
+  }
+  return { where: { AND: predicates } };
+}
+
+function FilterValueInput({
+  rule,
+  schema,
+  onChange,
+}: {
+  rule: FilterRule;
+  schema: api.Schema | null;
+  onChange: (value: string) => void;
+}) {
+  const type = fieldTypeFor(rule.field, schema);
+
+  if (type === "boolean") {
     return (
-      <div className="h-32 flex items-center justify-center text-muted-foreground text-xs bg-surface-0 rounded-md border border-border">
-        Loading editor...
-      </div>
+      <select
+        value={rule.value}
+        onChange={(event) => onChange(event.target.value)}
+        className="select-field text-xs !py-2 w-[8.5rem]"
+      >
+        <option value="">Select</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
+    );
+  }
+
+  if (type === "datetime") {
+    return (
+      <input
+        type="datetime-local"
+        value={rule.value}
+        onChange={(event) => onChange(event.target.value)}
+        className="input-field text-xs !py-2"
+      />
     );
   }
 
   return (
-    <div className="rounded-md overflow-hidden border border-border">
-      <CodeMirror
-        value={value}
-        height={height}
-        theme={theme}
-        extensions={jsonExt}
-        onChange={onChange}
-        basicSetup={{ lineNumbers: true, foldGutter: false }}
-        style={{ fontSize: "13px" }}
-      />
-    </div>
+    <input
+      type={type === "number" ? "number" : "text"}
+      value={rule.value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={rule.op === "in" ? "comma,separated,values" : "value"}
+      className="input-field text-xs !py-2"
+    />
   );
 }
 
-// ── Document editor modal ────────────────────────────────────────────────────
+function FilterBar() {
+  const { activeSchema, queryText, setPage, setQueryText } = useStore();
+  const queryRef = useRef(queryText);
+  const [quickSearch, setQuickSearch] = useState("");
+  const [filters, setFilters] = useState<FilterRule[]>([]);
+
+  const fieldOptions = useMemo(() => {
+    const options = ["_id"];
+    for (const field of activeSchema?.fields ?? []) {
+      if (storageFieldName(field) === "_id") continue;
+      options.push(field.name);
+    }
+    return options;
+  }, [activeSchema]);
+
+  useEffect(() => {
+    if (queryText === queryRef.current) return;
+    const parsed = simpleFiltersFromQuery(queryText, activeSchema);
+    setQuickSearch(parsed.quickSearch);
+    setFilters(parsed.filters);
+    queryRef.current = queryText;
+  }, [activeSchema, queryText]);
+
+  useEffect(() => {
+    const spec = buildQuerySpec(quickSearch, filters, activeSchema);
+    const nextQuery = JSON.stringify(spec, null, 2);
+    queryRef.current = nextQuery;
+    setQueryText(nextQuery);
+    setPage(0);
+  }, [activeSchema, filters, quickSearch, setPage, setQueryText]);
+
+  const updateRule = (id: string, patch: Partial<FilterRule>) => {
+    setFilters((current) =>
+      current.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule))
+    );
+  };
+
+  const clearAll = () => {
+    setQuickSearch("");
+    setFilters([]);
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-2/80 p-3 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[16rem] flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <input
+            type="text"
+            value={quickSearch}
+            onChange={(event) => setQuickSearch(event.target.value)}
+            placeholder="Search by _id..."
+            className="input-field !pl-9 text-xs !py-2"
+          />
+        </div>
+
+        <button
+          onClick={() => setFilters((current) => [...current, nextRule()])}
+          className="btn-ghost text-xs"
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          Add Filter
+        </button>
+
+        {(quickSearch || filters.length > 0) && (
+          <button onClick={clearAll} className="btn-ghost text-xs text-red-400">
+            <X className="w-3.5 h-3.5" />
+            Clear
+          </button>
+        )}
+      </div>
+
+      {filters.length > 0 && (
+        <div className="space-y-2">
+          {filters.map((rule, index) => {
+            const type = fieldTypeFor(rule.field, activeSchema);
+            return (
+              <motion.div
+                key={rule.id}
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className="grid gap-2 rounded-lg border border-border/80 bg-surface-1/70 px-3 py-2 md:grid-cols-[4rem_minmax(10rem,0.8fr)_10rem_minmax(12rem,1fr)_auto]"
+              >
+                <div className="flex items-center text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                  {index === 0 ? "Where" : "And"}
+                </div>
+
+                <select
+                  value={rule.field}
+                  onChange={(event) =>
+                    updateRule(rule.id, {
+                      field: event.target.value,
+                      value: "",
+                    })
+                  }
+                  className="select-field text-xs !py-2"
+                >
+                  <option value="">Field</option>
+                  {fieldOptions.map((field) => (
+                    <option key={field} value={field}>
+                      {field}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={rule.op}
+                  onChange={(event) => updateRule(rule.id, { op: event.target.value as api.QueryFilter["op"] })}
+                  className="select-field text-xs !py-2"
+                >
+                  {FILTER_OPERATORS.map((operator) => (
+                    <option key={operator.value} value={operator.value}>
+                      {operator.label}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <FilterValueInput
+                    rule={rule}
+                    schema={activeSchema}
+                    onChange={(value) => updateRule(rule.id, { value })}
+                  />
+                  <span className="metric-badge hidden lg:inline-flex">
+                    {type}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => setFilters((current) => current.filter((item) => item.id !== rule.id))}
+                  className="btn-ghost !p-2 text-muted-foreground hover:text-red-400"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      {!quickSearch && filters.length === 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+          <Sparkles className="w-3.5 h-3.5 text-neon-500" />
+          Build filters visually. They are translated into the real VoidDB query DSL under the hood.
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface DocEditorProps {
   doc: Document | null;
@@ -235,9 +412,9 @@ function DocEditor({ doc, onClose, onSaved }: DocEditorProps) {
   const isNew = doc === null;
 
   const initialJSON = isNew
-    ? JSON.stringify({ name: "", value: null }, null, 2)
+    ? JSON.stringify({}, null, 2)
     : JSON.stringify(
-        Object.fromEntries(Object.entries(doc).filter(([k]) => k !== "_id")),
+        Object.fromEntries(Object.entries(doc).filter(([key]) => key !== "_id")),
         null,
         2
       );
@@ -276,38 +453,43 @@ function DocEditor({ doc, onClose, onSaved }: DocEditorProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onClick={onClose}
     >
       <motion.div
-        initial={{ scale: 0.95, y: 10 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.95, y: 10 }}
-        onClick={(e) => e.stopPropagation()}
-        className="rounded-lg w-full max-w-2xl bg-surface-2 border border-border shadow-modal overflow-hidden"
+        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        onClick={(event) => event.stopPropagation()}
+        className="w-full max-w-3xl rounded-xl border border-border bg-surface-2 shadow-modal overflow-hidden"
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <h2 className="font-semibold text-sm">
-            {isNew ? "New Document" : `Edit: ${doc._id}`}
-          </h2>
-          <button onClick={onClose} className="btn-ghost !p-1">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">
+              {isNew ? "New Document" : `Edit JSON • ${doc._id}`}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Use full-document JSON editing when you need to reshape nested data.
+            </p>
+          </div>
+          <button onClick={onClose} className="btn-ghost !p-1.5">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-4">
-          <DarkEditor value={text} onChange={setText} />
+        <div className="p-5">
+          <textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            className="input-field min-h-[24rem] resize-y font-mono text-xs leading-6"
+          />
         </div>
 
-        <div className="flex justify-end gap-3 px-5 py-3 border-t border-border">
+        <div className="flex justify-end gap-3 border-t border-border px-5 py-3">
           <button onClick={onClose} className="btn-ghost text-sm">
             Cancel
           </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="btn-primary text-sm"
-          >
+          <button onClick={save} disabled={saving} className="btn-primary text-sm">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {isNew ? "Create" : "Save"}
           </button>
@@ -317,42 +499,44 @@ function DocEditor({ doc, onClose, onSaved }: DocEditorProps) {
   );
 }
 
-// ── Data Panel ────────────────────────────────────────────────────────────────
-
 export function DataPanel() {
   const { activeDb, activeCol, setActiveSchema } = useStore();
-  const [editDoc, setEditDoc] = useState<Document | null | "new">(undefined as unknown as "new");
-  const [tableKey, setTableKey] = useState(0);
+  const [editorDoc, setEditorDoc] = useState<Document | null | undefined>(undefined);
+  const [refreshToken, setRefreshToken] = useState(0);
 
-  const refresh = () => setTableKey((k) => k + 1);
+  const refresh = () => setRefreshToken((value) => value + 1);
 
   useEffect(() => {
-    if (activeDb && activeCol) {
-      api.getSchema(activeDb, activeCol)
-         .then(setActiveSchema)
-         .catch(() => setActiveSchema({ fields: [] }));
-         
-      // Real-time integration
-      const token = localStorage.getItem("void_access_token") ?? "";
-      const es = new EventSource(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:7700"}/v1/databases/${activeDb}/realtime?token=${encodeURIComponent(token)}`);
-      es.onmessage = (e) => {
-         try {
-           const ev = JSON.parse(e.data);
-           if (ev.collection === activeCol) {
-             // For a robust system we'd merge the doc into Zustand directly,
-             // but for simplicity we can trigger a refresh if the event matches the active collection.
-             refresh();
-           }
-         } catch(err) {}
-      };
-      return () => es.close();
-    }
-  }, [activeDb, activeCol, setActiveSchema]);
+    if (!activeDb || !activeCol) return;
+
+    api.getSchema(activeDb, activeCol)
+      .then(setActiveSchema)
+      .catch(() => setActiveSchema({ fields: [] }));
+
+    const token = localStorage.getItem("void_access_token") ?? "";
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7700";
+    const es = new EventSource(
+      `${baseUrl}/v1/databases/${encodeURIComponent(activeDb)}/realtime?token=${encodeURIComponent(token)}`
+    );
+
+    es.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.collection === activeCol) {
+          refresh();
+        }
+      } catch {
+        // noop
+      }
+    };
+
+    return () => es.close();
+  }, [activeCol, activeDb, setActiveSchema]);
 
   if (!activeDb || !activeCol) {
     return (
       <Card className="h-full flex items-center justify-center">
-        <p className="text-muted-foreground text-sm">
+        <p className="text-sm text-muted-foreground">
           Select a database and collection from the sidebar
         </p>
       </Card>
@@ -360,59 +544,43 @@ export function DataPanel() {
   }
 
   return (
-    <div className="flex flex-col h-full gap-4">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          <span className="text-foreground font-semibold">{activeDb}</span>
-          <span className="mx-1.5 text-border">/</span>
-          <span className="text-neon-500">{activeCol}</span>
-        </h2>
-        <button
-          onClick={async () => {
-             if (!activeDb || !activeCol) return;
-             // Add empty document immediately to visually render an empty row inline
-             try {
-                const docFields: Record<string, unknown> = {};
-                const schema = useStore.getState().activeSchema;
-                if (schema && schema.fields) {
-                  schema.fields.forEach(f => {
-                    if (f.default === "now()") docFields[f.name] = new Date().toISOString();
-                    else if (f.default === "uuid()") docFields[f.name] = crypto.randomUUID();
-                  });
-                }
-                const res = await api.insertDocument(activeDb, activeCol, docFields);
-                toast.success("Row inserted");
-                refresh();
-             } catch(e) {
-                toast.error("Failed to insert row");
-             }
-          }}
-          className="btn-primary text-sm"
-        >
+    <div className="flex h-full flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-medium text-muted-foreground">
+            <span className="font-semibold text-foreground">{activeDb}</span>
+            <span className="mx-1.5 text-border">/</span>
+            <span className="text-neon-500">{activeCol}</span>
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Inline editing is type-aware. Nested JSON stays in a dedicated editor.
+          </p>
+        </div>
+
+        <button onClick={() => setEditorDoc(null)} className="btn-primary text-sm">
           <Plus className="w-4 h-4" />
           Add Row
         </button>
       </div>
 
-      {/* Visual Filters */}
       <FilterBar />
 
-      {/* Table */}
-      <div className="flex-1 min-h-0">
+      <div className="min-h-0 flex-1">
         <DocumentTable
-          key={tableKey}
-          onEditDoc={(doc) => setEditDoc(doc)}
+          refreshToken={refreshToken}
+          onEditDoc={(doc) => setEditorDoc(doc)}
         />
       </div>
 
-      {/* Modal */}
       <AnimatePresence>
-        {editDoc !== (undefined as unknown as "new") && (
+        {editorDoc !== undefined && (
           <DocEditor
-            doc={editDoc}
-            onClose={() => setEditDoc(undefined as unknown as "new")}
-            onSaved={() => { setEditDoc(undefined as unknown as "new"); refresh(); }}
+            doc={editorDoc}
+            onClose={() => setEditorDoc(undefined)}
+            onSaved={() => {
+              setEditorDoc(undefined);
+              refresh();
+            }}
           />
         )}
       </AnimatePresence>

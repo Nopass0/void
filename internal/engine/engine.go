@@ -338,22 +338,31 @@ func (e *Engine) Stats() map[string]interface{} {
 // Namespaces returns all namespaces currently visible in memtables and segments.
 // It is used to reconstruct database metadata after process restarts.
 func (e *Engine) Namespaces() []string {
-	seen := make(map[string]struct{})
+	visibleNamespaces := make(map[string]struct{})
+	seenKeys := make(map[string]struct{})
 
-	collectKey := func(key []byte) {
-		parts := strings.SplitN(string(key), ":", 2)
+	collectVisible := func(key []byte, deleted bool) {
+		keyString := string(key)
+		if _, ok := seenKeys[keyString]; ok {
+			return
+		}
+		seenKeys[keyString] = struct{}{}
+		if deleted {
+			return
+		}
+		parts := strings.SplitN(keyString, ":", 2)
 		if len(parts) != 2 || parts[0] == "" {
 			return
 		}
-		seen[parts[0]] = struct{}{}
+		visibleNamespaces[parts[0]] = struct{}{}
 	}
 
 	collectSkipList := func(sl *storage.SkipList) {
 		if sl == nil {
 			return
 		}
-		sl.Scan(nil, nil, func(key, _ []byte, _ bool) bool {
-			collectKey(key)
+		sl.Scan(nil, nil, func(key, _ []byte, deleted bool) bool {
+			collectVisible(key, deleted)
 			return true
 		})
 	}
@@ -363,13 +372,13 @@ func (e *Engine) Namespaces() []string {
 	collectSkipList(e.imm)
 	for _, seg := range e.segments {
 		for _, entry := range seg.Entries() {
-			collectKey(entry.Key)
+			collectVisible(entry.Key, entry.Deleted)
 		}
 	}
 	e.mu.RUnlock()
 
-	namespaces := make([]string, 0, len(seen))
-	for ns := range seen {
+	namespaces := make([]string, 0, len(visibleNamespaces))
+	for ns := range visibleNamespaces {
 		namespaces = append(namespaces, ns)
 	}
 	sort.Strings(namespaces)
