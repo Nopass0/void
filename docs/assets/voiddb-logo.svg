@@ -1,0 +1,26 @@
+<svg width="900" height="220" viewBox="0 0 900 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="voiddb-bg" x1="26" y1="20" x2="158" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#19172F"/>
+      <stop offset="1" stop-color="#0B1021"/>
+    </linearGradient>
+    <linearGradient id="voiddb-bolt" x1="72" y1="46" x2="121" y2="137" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#97A5FF"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+    <filter id="voiddb-glow" x="26" y="20" width="132" height="132" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+  <rect width="900" height="220" rx="28" fill="#060816"/>
+  <rect x="24" y="24" width="136" height="136" rx="34" fill="url(#voiddb-bg)"/>
+  <rect x="24" y="24" width="136" height="136" rx="34" stroke="#2B3470" stroke-width="2"/>
+  <g opacity="0.45" filter="url(#voiddb-glow)">
+    <path d="M98 46L70 95H96L83 138L123 86H96L110 46H98Z" fill="#6E6BFF"/>
+  </g>
+  <path d="M98 46L70 95H96L83 138L123 86H96L110 46H98Z" fill="url(#voiddb-bolt)"/>
+  <path d="M98 46L70 95H96L83 138L123 86H96L110 46H98Z" stroke="#C4CCFF" stroke-width="3" stroke-linejoin="round"/>
+  <text x="196" y="92" fill="#F5F7FF" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="68" font-weight="700">VoidDB</text>
+  <text x="198" y="134" fill="#94A3B8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="24">Document database, blob storage, cache, schema sync</text>
+  <text x="198" y="170" fill="#6E7BB0" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="20">Self-hosted Go backend with realtime admin and PostgreSQL import</text>
+</svg>

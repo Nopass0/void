@@ -1,126 +1,129 @@
-# VoidDB ⚡
+<p align="center">
+  <img src="./docs/assets/voiddb-logo.svg" alt="VoidDB" width="720">
+</p>
 
-**A blazing-fast, self-hosted document database with S3-compatible blob storage.**
+<p align="center">
+  <strong>Self-hosted document database for fast product backends.</strong><br>
+  Documents, blobs, cache, realtime admin, Prisma-like schema sync, migrations, and PostgreSQL import in one stack.
+</p>
 
-VoidDB is built from scratch in Go using a custom LSM-tree storage engine:
-concurrent skip-list memtable, Bloom filter segments, memory-mapped SSTables,
-and a write-ahead log — all designed for maximum throughput on modest hardware.
+<p align="center">
+  <a href="https://nopass0.github.io/void/">Docs</a> |
+  <a href="https://github.com/Nopass0/void_ts">TypeScript ORM</a> |
+  <a href="https://github.com/Nopass0/void/tree/main/orm/go">Go SDK</a> |
+  <a href="./SKILL.md">AI Agent Guide</a>
+</p>
 
----
+## Why VoidDB
 
-## Architecture
+VoidDB is a self-hosted database built for teams that want one deployable service instead of a pile of moving parts.
+You get a document database, S3-style blob storage, an in-memory cache, backups, schema sync, a live admin console, and direct PostgreSQL import without leaving the repo.
 
+Highlights:
+
+- Fast custom LSM storage engine written in Go
+- Document API with schemas, indexes, relations, realtime updates, and imports
+- S3-compatible blob storage with buckets and objects
+- Built-in cache API for sessions, hot keys, and ephemeral state
+- Admin console for data, users, logs, backups, query editing, and imports
+- Prisma-like schema pull/push and migration workflow via `voidcli`
+- Companion ORMs for TypeScript and Go
+
+## Install Locally
+
+### Windows
+
+```powershell
+git clone https://github.com/Nopass0/void.git
+cd void
+.\scripts\setup.ps1
+.\scripts\run.ps1 -WithAdmin
 ```
-Client
-  │
-  ▼
-REST API (Gorilla Mux + JWT Auth)
-  │
-  ├── Document Store (Collection / Database)
-  │     │
-  │     ▼
-  │   LSM Engine
-  │     ├── Memtable  (lock-free concurrent skip list)
-  │     ├── WAL       (sequential append-only log)
-  │     ├── SSTables  (immutable sorted segments + Bloom filters)
-  │     └── LRU Cache (hot block cache)
-  │
-  └── Blob Store (S3-compatible HTTP API)
-        └── Files on disk with JSON metadata sidecar
-```
 
-## Quick Deploy (Linux Server)
-
-Deploy VoidDB to a production server with **one command**. Generates random admin credentials, sets up a systemd service, and optionally configures HTTPS via Caddy.
+### Linux / macOS
 
 ```bash
-# Basic deploy (HTTP, port 7700)
-curl -sSL https://raw.githubusercontent.com/voiddb/void/main/scripts/deploy.sh | sudo bash
+git clone https://github.com/Nopass0/void.git
+cd void
+chmod +x scripts/*.sh
+./scripts/setup.sh
+./scripts/run.sh --with-admin
+```
 
-# With domain + auto-HTTPS
-curl -sSL https://raw.githubusercontent.com/voiddb/void/main/scripts/deploy.sh | sudo bash -s -- \
+### Docker Compose
+
+```bash
+git clone https://github.com/Nopass0/void.git
+cd void
+cp .env.example .env
+docker compose up -d
+```
+
+Default local endpoints:
+
+- API: `http://localhost:7700`
+- Admin: `http://localhost:3000`
+- AI guide: `http://localhost:7700/skill.md`
+
+## Deploy On A Server
+
+### One-command Linux deploy
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Nopass0/void/main/scripts/deploy.sh | sudo bash
+```
+
+With domain and automatic HTTPS:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Nopass0/void/main/scripts/deploy.sh | sudo bash -s -- \
   --domain db.example.com
 ```
 
-After the script finishes it prints:
+The deploy script:
 
-```
-╔════════════════════════════════════════╗
-║    VoidDB Deployed Successfully!       ║
-╠════════════════════════════════════════╣
-║  URL:    https://db.example.com        ║
-║  Login:  clever-frog-rapid-moon        ║
-║  Pass:   bright-star-wild-ocean        ║
-╚════════════════════════════════════════╝
-```
+- installs Go if missing
+- clones or updates the repo
+- builds `voiddb` and `voidcli`
+- generates admin credentials and JWT secret
+- writes `config.yaml`
+- installs a `systemd` service
+- optionally configures Caddy for TLS
 
----
-
-## Quick Start
-
-### Docker Compose (recommended)
-
-```bash
-cp .env.example .env          # edit secrets
-docker-compose up -d          # start VoidDB + Admin + PostgreSQL
-open http://localhost:3000    # Admin panel (login: admin / admin)
-```
-
-### Build from source
+### Manual build
 
 ```bash
 go mod download
 go build -o voiddb ./cmd/voiddb
+go build -o voidcli ./cmd/voidcli
 ./voiddb -config config.yaml
 ```
 
-### Admin panel
+## First Request In Under A Minute
 
 ```bash
-cd admin
-npm install
-npm run dev   # http://localhost:3000
+curl -X POST http://localhost:7700/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}'
 ```
-
----
-
-## API Reference
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/v1/auth/login` | Login → JWT |
-| POST | `/v1/auth/refresh` | Refresh token |
-| GET | `/v1/databases` | List databases |
-| POST | `/v1/databases` | Create database |
-| DELETE | `/v1/databases/{db}` | Drop database |
-| GET | `/v1/databases/{db}/collections` | List collections |
-| POST | `/v1/databases/{db}/collections` | Create collection |
-| DELETE | `/v1/databases/{db}/collections/{col}` | Drop collection |
-| GET | `/v1/databases/{db}/{col}/schema` | Read collection schema |
-| PUT | `/v1/databases/{db}/{col}/schema` | Update collection schema |
-| POST | `/v1/databases/{db}/{col}` | Insert document |
-| GET | `/v1/databases/{db}/{col}/{id}` | Get document |
-| PUT | `/v1/databases/{db}/{col}/{id}` | Replace document |
-| PATCH | `/v1/databases/{db}/{col}/{id}` | Partial update |
-| DELETE | `/v1/databases/{db}/{col}/{id}` | Delete document |
-| POST | `/v1/databases/{db}/{col}/query` | Query documents |
-| GET | `/v1/stats` | Engine stats |
-| PUT | `/s3/{bucket}/{key}` | Upload blob (S3) |
-| GET | `/s3/{bucket}/{key}` | Download blob (S3) |
-
-## AI Agent Guide
-
-Running VoidDB servers expose a machine-readable markdown guide for agents:
 
 ```bash
-curl http://localhost:7700/skill.md
+curl -X POST http://localhost:7700/v1/databases/app/collections \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"users"}'
 ```
 
-The same guide also lives in this repository at [`SKILL.md`](./SKILL.md).
+```bash
+curl -X POST http://localhost:7700/v1/databases/app/users \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Alice","age":30,"active":true}'
+```
 
-## Prisma-like Schema And Migrations
+## Schema Sync And Migrations
 
-VoidDB supports Prisma-like schema files and CLI-driven schema sync.
+VoidDB supports Prisma-like schema files and CLI workflows for pull, push, diff, and migrations.
 
 ```prisma
 datasource db {
@@ -134,9 +137,10 @@ generator client {
 }
 
 model User {
-  id    String @id @default(uuid()) @map("_id")
-  email String @unique
-  name  String?
+  id        String   @id @default(uuid()) @map("_id")
+  email     String   @unique
+  name      String?
+  createdAt DateTime @map("created_at")
 
   @@database("app")
   @@map("users")
@@ -147,97 +151,116 @@ model User {
 voidcli schema pull --out void.prisma
 voidcli schema push --schema void.prisma --dry-run
 voidcli schema push --schema void.prisma
-voidcli migrate dev --schema void.prisma --name add_users
+voidcli migrate dev --schema void.prisma --name init
 voidcli migrate deploy --dir void/migrations
 voidcli migrate status --dir void/migrations
 ```
 
-## PostgreSQL Import
+## Import PostgreSQL
 
-Import PostgreSQL schema and rows directly into VoidDB:
+Clone schema and rows directly from PostgreSQL:
 
 ```bash
-voidcli import postgres "postgres://user:pass@localhost:5432/app?sslmode=disable" \
+voidcli import postgres "postgresql://user:pass@host:5432/app?sslmode=require" \
   --database app \
   --schema public \
   --drop-existing
 ```
 
-## TypeScript ORM
+The admin console also supports importing a new database directly from a PostgreSQL connection string.
 
-```typescript
-import { VoidClient, query } from '@voiddb/orm'
+## Official Client Ecosystem
 
-const client = new VoidClient({ url: 'http://localhost:7700', token: '...' })
-const users = client.database('myapp').collection<User>('users')
+### TypeScript ORM
 
-// Insert
-const id = await users.insert({ name: 'Alice', age: 30 })
+Repository: [Nopass0/void_ts](https://github.com/Nopass0/void_ts)  
+Docs: [nopass0.github.io/void_ts](https://nopass0.github.io/void_ts/)
 
-// Query
+```ts
+import { VoidClient, query } from "@voiddb/orm";
+
+const client = new VoidClient({ url: "http://localhost:7700" });
+await client.login("admin", "admin");
+
+const users = client.db("app").collection<{ name: string; age: number }>("users");
+
+await users.insert({ name: "Alice", age: 30 });
+
 const adults = await users.find(
-  query().where('age', 'gte', 18).orderBy('name').limit(25)
-)
-
-// Update & delete
-await users.patch(id, { age: 31 })
-await users.delete(id)
+  query().where("age", "gte", 18).orderBy("name", "asc").limit(25)
+);
 ```
 
-The TypeScript ORM also exposes structured schema sync:
+### Go SDK
 
-```typescript
-const project = await client.schema.pull()
-const plan = await client.schema.plan(project, { dryRun: true })
-await client.schema.push(project, { forceDrop: false })
-```
-
-## Go ORM
+Package path: [github.com/voiddb/void/orm/go](https://github.com/Nopass0/void/tree/main/orm/go)
 
 ```go
 client, _ := voidorm.New(voidorm.Config{
-    URL:   "http://localhost:7700",
-    Token: os.Getenv("VOID_TOKEN"),
+    URL:      "http://localhost:7700",
+    Username: "admin",
+    Password: "admin",
 })
-col := client.DB("myapp").Collection("users")
-id, _ := col.Insert(ctx, voidorm.Doc{"name": "Alice", "age": 30})
-docs, _ := col.Find(ctx, voidorm.NewQuery().Where("age", voidorm.Gte, 18))
+
+col := client.DB("app").Collection("users")
+id, _ := col.Insert(voidorm.Doc{"name": "Alice", "age": 30})
+doc, _ := col.GetByID(id)
+_ = doc
 ```
 
-## Benchmark (VoidDB vs PostgreSQL)
+## Admin Console
+
+The Next.js admin console ships in this repository and covers:
+
+- databases and collections
+- typed cell editing
+- blob buckets and objects
+- query editor
+- users and roles
+- logs and realtime activity
+- backups, retention, and schedules
+- PostgreSQL import
+
+Run it locally:
 
 ```bash
-docker-compose up -d postgres voiddb
-cd benchmark
-go run main.go -records 100000 -workers 8
+cd admin
+npm install
+npm run dev
 ```
 
-Expected results on a typical developer machine:
-- **Point GET**: VoidDB ~50–200x faster (sub-μs in-memory vs disk I/O)
-- **Range scan**: VoidDB ~10–50x faster (Bloom filters + mmap vs PostgreSQL planner)
-- **Concurrent INSERT**: VoidDB ~5–20x faster (batched WAL vs row-level locks)
+## AI Agent Guide
 
-## Project Structure
+Running VoidDB servers expose a machine-readable usage guide for agents:
 
+```bash
+curl http://localhost:7700/skill.md
+curl http://localhost:7700/.well-known/voiddb-skill.md
 ```
+
+Repository copy: [SKILL.md](./SKILL.md)
+
+## Documentation
+
+- Main docs site: [nopass0.github.io/void](https://nopass0.github.io/void/)
+- TypeScript ORM docs: [nopass0.github.io/void_ts](https://nopass0.github.io/void_ts/)
+- TypeScript ORM repo: [Nopass0/void_ts](https://github.com/Nopass0/void_ts)
+- Go SDK source: [orm/go](https://github.com/Nopass0/void/tree/main/orm/go)
+
+## Repository Layout
+
+```text
 void/
-├── cmd/voiddb/          # Server entry point
-├── internal/
-│   ├── config/          # YAML + env configuration
-│   ├── engine/          # LSM-tree storage engine
-│   │   ├── storage/     # Pages, segments, skip list, Bloom filter
-│   │   ├── cache/       # LRU block cache
-│   │   └── wal/         # Write-ahead log
-│   ├── auth/            # JWT authentication
-│   ├── blob/            # S3-compatible object storage
-│   └── api/             # HTTP handlers + middleware
-├── orm/
-│   ├── typescript/      # TypeScript ORM (@voiddb/orm)
-│   └── go/              # Go ORM (github.com/voiddb/void/orm/go)
-├── admin/               # Next.js admin panel
-├── benchmark/           # VoidDB vs PostgreSQL benchmark
-├── config.yaml          # Default configuration
-└── docker-compose.yml   # Docker deployment
+|-- admin/              Next.js admin console
+|-- benchmark/          Benchmarks and performance checks
+|-- cmd/                voiddb and voidcli binaries
+|-- docs/               GitHub Pages documentation
+|-- internal/           Engine, API, auth, blob, cache, import, backup
+|-- orm/go/             Go SDK
+|-- orm/typescript/     TypeScript ORM
+|-- scripts/            Local run, setup, backup, deploy helpers
+|-- config.yaml         Default server configuration
+`-- docker-compose.yml  Local stack
 ```
 
 ## License

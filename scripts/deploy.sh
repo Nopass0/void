@@ -4,11 +4,11 @@
 # =============================================================================
 # Deploys VoidDB to a fresh Linux server in a single command:
 #
-#   curl -sSL https://raw.githubusercontent.com/voiddb/void/main/scripts/deploy.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/Nopass0/void/main/scripts/deploy.sh | bash
 #
 # With domain + auto-HTTPS via Caddy:
 #
-#   curl -sSL https://raw.githubusercontent.com/voiddb/void/main/scripts/deploy.sh | bash -s -- \
+#   curl -sSL https://raw.githubusercontent.com/Nopass0/void/main/scripts/deploy.sh | bash -s -- \
 #     --domain db.example.com
 #
 # Flags:
@@ -30,7 +30,7 @@ fail()    { echo -e "${RED}[ERR]${NC}  $*" >&2; exit 1; }
 DOMAIN=""
 PORT=7700
 INSTALL_DIR="/opt/voiddb"
-REPO="https://github.com/voiddb/void.git"
+REPO="https://github.com/Nopass0/void.git"
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do

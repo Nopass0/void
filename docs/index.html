@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VoidDB — High-Performance Document Database</title>
+<link rel="icon" href="./favicon.ico" sizes="any">
 <style>
   :root {
     --bg: #0d0d1a; --bg2: #13132b; --bg3: #1a1a35;
@@ -155,7 +156,7 @@
     <div class="card"><div class="card-icon">🔐</div><h3>TLS / Let's Encrypt</h3><p>Automatic HTTPS via ACME HTTP-01, bring-your-own certs (including wildcards), HTTP→HTTPS redirect.</p></div>
     <div class="card"><div class="card-icon">💾</div><h3>Backup &amp; Restore</h3><p>Export to native <code>.void</code> archives (tar+gzip+NDJSON). Scheduled backups via cron or Task Scheduler.</p></div>
     <div class="card"><div class="card-icon">🔧</div><h3>CLI Tool</h3><p><code>voidcli</code> — manage databases, collections, and documents from the terminal.</p></div>
-    <div class="card"><div class="card-icon">📦</div><h3>ORM Libraries</h3><p>Type-safe clients for TypeScript (<code>@voiddb/orm</code> on npm) and Go (<code>github.com/voiddb/orm-go</code>).</p></div>
+    <div class="card"><div class="card-icon">📦</div><h3>ORM Libraries</h3><p>Type-safe clients for TypeScript (<code>@voiddb/orm</code>) and Go (<code>github.com/voiddb/void/orm/go</code>).</p></div>
   </div>
 </section>
 
@@ -387,8 +388,8 @@ docker compose up -d
   </div>
 
   <div id="orm-go" class="tab-content">
-    <p>Install: <code>go get github.com/voiddb/orm-go</code></p>
-<pre><code><span class="kw">import</span> voidorm <span class="str">"github.com/voiddb/orm-go"</span>
+    <p>Install: <code>go get github.com/voiddb/void/orm/go</code></p>
+<pre><code><span class="kw">import</span> voidorm <span class="str">"github.com/voiddb/void/orm/go"</span>
 
 client, _ := voidorm.<span class="fn">New</span>(voidorm.<span class="type">Config</span>{
     URL:      <span class="str">"http://localhost:7700"</span>,
@@ -443,7 +444,7 @@ col.<span class="fn">Delete</span>(id)</code></pre>
   <p>VoidDB &copy; 2024 &nbsp;&bull;&nbsp; MIT License &nbsp;&bull;&nbsp;
   <a href="https://github.com/Nopass0/void">GitHub</a> &nbsp;&bull;&nbsp;
   <a href="https://github.com/Nopass0/void_ts">TypeScript ORM</a> &nbsp;&bull;&nbsp;
-  <a href="https://github.com/Nopass0/void_go">Go ORM</a></p>
+  <a href="https://github.com/Nopass0/void/tree/main/orm/go">Go SDK</a></p>
 </footer>
 
 <script>
