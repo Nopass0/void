@@ -380,6 +380,15 @@ Commands:
   doc get    <db> <col> <id>       Get document by ID
   doc delete <db> <col> <id>       Delete document by ID
 
+  schema pull [--out file]         Pull current VoidDB schema into Prisma-like file
+  schema push [--schema file]      Push Prisma-like schema into VoidDB
+
+  migrate dev --name <name>        Create and apply a migration from schema diff
+  migrate deploy                   Apply pending migrations from disk
+  migrate status                   Show migration status
+
+  import postgres <url>            Import PostgreSQL schema and data by connection URL
+
   backup  [db...]                  Export to .void archive
   restore <file.void>              Restore from .void archive
 
@@ -389,11 +398,96 @@ Examples:
   voidcli col create myapp users
   voidcli doc insert myapp users '{"name":"Alice","age":30}'
   voidcli doc find myapp users '{"where":[{"field":"age","op":"gt","value":18}]}'
+  voidcli schema pull --out void.prisma
+  voidcli schema push --schema void.prisma --dry-run
+  voidcli migrate dev --name add_users
+  voidcli import postgres postgres://user:pass@localhost:5432/appdb --database app
   voidcli backup
   voidcli restore voiddb_backup_20240101_020000.void
 
 `, version)
 	os.Exit(2)
+}
+
+func cmdSchema(args []string) {
+	if len(args) == 0 {
+		fatalf("schema requires a subcommand: pull | push")
+	}
+	switch args[0] {
+	case "pull":
+		fs := flag.NewFlagSet("schema pull", flag.ExitOnError)
+		out := fs.String("out", defaultSchemaPath, "output schema file")
+		stdout := fs.Bool("stdout", false, "print schema to stdout")
+		_ = fs.Parse(args[1:])
+		if *stdout {
+			cmdSchemaPull("")
+			return
+		}
+		cmdSchemaPull(*out)
+	case "push":
+		fs := flag.NewFlagSet("schema push", flag.ExitOnError)
+		path := fs.String("schema", defaultSchemaPath, "schema file")
+		dryRun := fs.Bool("dry-run", false, "show the schema plan without applying it")
+		forceDrop := fs.Bool("force-drop", false, "drop collections and databases missing from the schema file")
+		_ = fs.Parse(args[1:])
+		cmdSchemaPush(*path, *dryRun, *forceDrop)
+	default:
+		fatalf("unknown schema subcommand: %s", args[0])
+	}
+}
+
+func cmdMigrate(args []string) {
+	if len(args) == 0 {
+		fatalf("migrate requires a subcommand: dev | deploy | status")
+	}
+	switch args[0] {
+	case "dev":
+		fs := flag.NewFlagSet("migrate dev", flag.ExitOnError)
+		path := fs.String("schema", defaultSchemaPath, "schema file")
+		dir := fs.String("dir", defaultMigrationDir, "migration directory")
+		name := fs.String("name", "", "migration name")
+		forceDrop := fs.Bool("force-drop", false, "drop collections and databases missing from the schema file")
+		_ = fs.Parse(args[1:])
+		cmdMigrateDev(*path, *dir, *name, *forceDrop)
+	case "deploy":
+		fs := flag.NewFlagSet("migrate deploy", flag.ExitOnError)
+		dir := fs.String("dir", defaultMigrationDir, "migration directory")
+		forceDrop := fs.Bool("force-drop", false, "drop collections and databases missing from pending migrations")
+		_ = fs.Parse(args[1:])
+		cmdMigrateDeploy(*dir, *forceDrop)
+	case "status":
+		fs := flag.NewFlagSet("migrate status", flag.ExitOnError)
+		dir := fs.String("dir", defaultMigrationDir, "migration directory")
+		_ = fs.Parse(args[1:])
+		cmdMigrateStatus(*dir)
+	default:
+		fatalf("unknown migrate subcommand: %s", args[0])
+	}
+}
+
+func cmdImport(args []string) {
+	if len(args) == 0 {
+		fatalf("import requires a source: postgres")
+	}
+	switch args[0] {
+	case "postgres":
+		fs := flag.NewFlagSet("import postgres", flag.ExitOnError)
+		source := fs.String("source", "", "PostgreSQL connection URL")
+		targetDB := fs.String("database", "", "target VoidDB database name")
+		sourceSchema := fs.String("schema", "public", "PostgreSQL schema name")
+		dropExisting := fs.Bool("drop-existing", false, "drop the target database before import")
+		progressEvery := fs.Int("progress-every", 250, "print progress every N imported rows")
+		_ = fs.Parse(args[1:])
+		if *source == "" && fs.NArg() > 0 {
+			*source = fs.Arg(0)
+		}
+		if *source == "" {
+			fatalf("import postgres <postgres-url> [--database target] [--schema public] [--drop-existing]")
+		}
+		cmdImportPostgres(*source, *targetDB, *sourceSchema, *dropExisting, *progressEvery)
+	default:
+		fatalf("unknown import source: %s", args[0])
+	}
 }
 
 func main() {
@@ -509,6 +603,15 @@ func main() {
 			fatalf("restore <file.void>")
 		}
 		cmdRestore(rest[0])
+
+	case "schema":
+		cmdSchema(rest)
+
+	case "migrate":
+		cmdMigrate(rest)
+
+	case "import":
+		cmdImport(rest)
 
 	default:
 		fatalf("unknown command: %s\nRun 'voidcli --help' for usage.", cmd)

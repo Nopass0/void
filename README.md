@@ -92,8 +92,12 @@ npm run dev   # http://localhost:3000
 | POST | `/v1/auth/refresh` | Refresh token |
 | GET | `/v1/databases` | List databases |
 | POST | `/v1/databases` | Create database |
+| DELETE | `/v1/databases/{db}` | Drop database |
 | GET | `/v1/databases/{db}/collections` | List collections |
 | POST | `/v1/databases/{db}/collections` | Create collection |
+| DELETE | `/v1/databases/{db}/collections/{col}` | Drop collection |
+| GET | `/v1/databases/{db}/{col}/schema` | Read collection schema |
+| PUT | `/v1/databases/{db}/{col}/schema` | Update collection schema |
 | POST | `/v1/databases/{db}/{col}` | Insert document |
 | GET | `/v1/databases/{db}/{col}/{id}` | Get document |
 | PUT | `/v1/databases/{db}/{col}/{id}` | Replace document |
@@ -114,6 +118,51 @@ curl http://localhost:7700/skill.md
 
 The same guide also lives in this repository at [`SKILL.md`](./SKILL.md).
 
+## Prisma-like Schema And Migrations
+
+VoidDB supports Prisma-like schema files and CLI-driven schema sync.
+
+```prisma
+datasource db {
+  provider = "voiddb"
+  url      = env("VOID_URL")
+}
+
+generator client {
+  provider = "voiddb-client-js"
+  output   = "./generated"
+}
+
+model User {
+  id    String @id @default(uuid()) @map("_id")
+  email String @unique
+  name  String?
+
+  @@database("app")
+  @@map("users")
+}
+```
+
+```bash
+voidcli schema pull --out void.prisma
+voidcli schema push --schema void.prisma --dry-run
+voidcli schema push --schema void.prisma
+voidcli migrate dev --schema void.prisma --name add_users
+voidcli migrate deploy --dir void/migrations
+voidcli migrate status --dir void/migrations
+```
+
+## PostgreSQL Import
+
+Import PostgreSQL schema and rows directly into VoidDB:
+
+```bash
+voidcli import postgres "postgres://user:pass@localhost:5432/app?sslmode=disable" \
+  --database app \
+  --schema public \
+  --drop-existing
+```
+
 ## TypeScript ORM
 
 ```typescript
@@ -133,6 +182,14 @@ const adults = await users.find(
 // Update & delete
 await users.patch(id, { age: 31 })
 await users.delete(id)
+```
+
+The TypeScript ORM also exposes structured schema sync:
+
+```typescript
+const project = await client.schema.pull()
+const plan = await client.schema.plan(project, { dryRun: true })
+await client.schema.push(project, { forceDrop: false })
 ```
 
 ## Go ORM

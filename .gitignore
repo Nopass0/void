@@ -43,3 +43,5 @@ Thumbs.db
 
 # Temp token files
 .void_token
+.tmp/
+*.exe~

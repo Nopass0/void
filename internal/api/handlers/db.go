@@ -63,6 +63,21 @@ func (h *DBHandler) CreateDatabase(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"name": req.Name})
 }
 
+// DeleteDatabase handles DELETE /v1/databases/{db}.
+func (h *DBHandler) DeleteDatabase(w http.ResponseWriter, r *http.Request) {
+	dbName := mux.Vars(r)["db"]
+	if dbName == "" {
+		writeError(w, http.StatusBadRequest, "database is required")
+		return
+	}
+	if err := h.store.DropDatabase(dbName); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	zap.L().Info("database dropped", zap.String("database", dbName))
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Realtime handles GET /v1/databases/{db}/realtime (SSE).
 func (h *DBHandler) Realtime(w http.ResponseWriter, r *http.Request) {
 	dbName := mux.Vars(r)["db"]
@@ -126,6 +141,23 @@ func (h *DBHandler) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	zap.L().Info("collection created", zap.String("database", dbName), zap.String("collection", req.Name))
 	writeJSON(w, http.StatusCreated, map[string]string{"name": req.Name})
+}
+
+// DeleteCollection handles DELETE /v1/databases/{db}/collections/{col}.
+func (h *DBHandler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	dbName := vars["db"]
+	colName := vars["col"]
+	if dbName == "" || colName == "" {
+		writeError(w, http.StatusBadRequest, "database and collection are required")
+		return
+	}
+	if err := h.store.DropCollection(dbName, colName); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	zap.L().Info("collection dropped", zap.String("database", dbName), zap.String("collection", colName))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- Schema endpoints --------------------------------------------------------

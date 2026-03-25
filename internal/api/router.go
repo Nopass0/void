@@ -82,11 +82,13 @@ func NewRouter(
 	// Database management.
 	api.HandleFunc("/databases", dbH.ListDatabases).Methods(http.MethodGet)
 	api.HandleFunc("/databases", dbH.CreateDatabase).Methods(http.MethodPost)
+	api.HandleFunc("/databases/{db}", dbH.DeleteDatabase).Methods(http.MethodDelete)
 	api.HandleFunc("/databases/{db}/realtime", dbH.Realtime).Methods(http.MethodGet)
 	
 	// Collection management.
 	api.HandleFunc("/databases/{db}/collections", dbH.ListCollections).Methods(http.MethodGet)
 	api.HandleFunc("/databases/{db}/collections", dbH.CreateCollection).Methods(http.MethodPost)
+	api.HandleFunc("/databases/{db}/collections/{col}", dbH.DeleteCollection).Methods(http.MethodDelete)
 	
 	// Schema management.
 	api.HandleFunc("/databases/{db}/{col}/schema", dbH.GetSchema).Methods(http.MethodGet)

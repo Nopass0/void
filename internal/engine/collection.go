@@ -18,6 +18,7 @@ import (
 const (
 	metaDatabasePrefix   = "db:"
 	metaCollectionPrefix = "col:"
+	metaSchemaPrefix     = "schema:"
 )
 
 // Collection is a named set of Documents stored in the Engine.
@@ -41,7 +42,7 @@ func newCollection(eng *Engine, name string, hub *Hub) *Collection {
 func (c *Collection) loadSchema() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	data, found, err := c.eng.Get("_meta", []byte("schema:"+c.name))
+	data, found, err := c.eng.Get("_meta", []byte(metaSchemaPrefix+c.name))
 	if err == nil && found {
 		s, _ := unmarshalSchema(data)
 		c.schema = s
@@ -59,11 +60,20 @@ func (c *Collection) Schema() *Schema {
 
 // SetSchema saves and applies a new schema to the collection.
 func (c *Collection) SetSchema(s *Schema) error {
+	if s == nil {
+		s = NewDefaultSchema()
+	}
+	s = s.Normalize()
+	s.Collection = collectionNameFromNamespace(c.name)
+	s.Database = databaseNameFromNamespace(c.name)
+	if s.Model == "" {
+		s.Model = collectionNameFromNamespace(c.name)
+	}
 	data, err := marshalSchema(s)
 	if err != nil {
 		return err
 	}
-	if err := c.eng.Put("_meta", []byte("schema:"+c.name), data); err != nil {
+	if err := c.eng.Put("_meta", []byte(metaSchemaPrefix+c.name), data); err != nil {
 		return err
 	}
 	c.mu.Lock()
@@ -89,6 +99,9 @@ func (c *Collection) Insert(doc *types.Document) (string, error) {
 	// Ensure ID is set (Apply might have generated it)
 	if doc.ID == "" {
 		doc.ID = uuid.New().String()
+	}
+	if err := c.validateUniqueConstraints(doc, ""); err != nil {
+		return "", err
 	}
 	
 	data, err := marshalDoc(doc)
@@ -126,6 +139,9 @@ func (c *Collection) Update(id string, doc *types.Document) error {
 	}
 
 	doc.ID = id
+	if err := c.validateUniqueConstraints(doc, id); err != nil {
+		return err
+	}
 	data, err := marshalDoc(doc)
 	if err != nil {
 		return fmt.Errorf("collection %s: marshal: %w", c.name, err)
@@ -271,6 +287,97 @@ func (c *Collection) Count(q *Query) (int64, error) {
 		return true
 	})
 	return n, err
+}
+
+func (c *Collection) validateUniqueConstraints(doc *types.Document, currentID string) error {
+	c.mu.RLock()
+	schema := c.schema
+	c.mu.RUnlock()
+	if schema == nil {
+		return nil
+	}
+
+	type uniqueCheck struct {
+		Label  string
+		Fields []string
+	}
+
+	var checks []uniqueCheck
+	for _, field := range schema.Fields {
+		if field.Unique {
+			checks = append(checks, uniqueCheck{
+				Label:  field.Name,
+				Fields: []string{field.StorageName()},
+			})
+		}
+	}
+	for _, idx := range schema.Indexes {
+		if idx.Unique || idx.Primary {
+			checks = append(checks, uniqueCheck{
+				Label:  idx.Name,
+				Fields: append([]string(nil), idx.Fields...),
+			})
+		}
+	}
+
+	for _, check := range checks {
+		if len(check.Fields) == 0 {
+			continue
+		}
+		var target []types.Value
+		skip := false
+		for _, fieldName := range check.Fields {
+			if fieldName == "_id" {
+				target = append(target, types.String(doc.ID))
+				continue
+			}
+			v := doc.Get(fieldName)
+			if v.IsNull() {
+				skip = true
+				break
+			}
+			target = append(target, v)
+		}
+		if skip {
+			continue
+		}
+
+		conflict := false
+		err := c.eng.Scan(c.name, func(_, value []byte) bool {
+			existing, err := unmarshalDoc(value)
+			if err != nil {
+				return true
+			}
+			if existing.ID == currentID {
+				return true
+			}
+			for i, fieldName := range check.Fields {
+				var existingValue types.Value
+				if fieldName == "_id" {
+					existingValue = types.String(existing.ID)
+				} else {
+					existingValue = existing.Get(fieldName)
+				}
+				if !types.Equal(existingValue, target[i]) {
+					return true
+				}
+			}
+			conflict = true
+			return false
+		})
+		if err != nil {
+			return err
+		}
+		if conflict {
+			label := check.Label
+			if label == "" {
+				label = strings.Join(check.Fields, ",")
+			}
+			return fmt.Errorf("collection %s: unique constraint violation on %s", c.name, label)
+		}
+	}
+
+	return nil
 }
 
 // --- serialisation -----------------------------------------------------------
@@ -478,6 +585,54 @@ func (s *Store) CreateCollection(dbName, colName string) (*Collection, error) {
 	return col, nil
 }
 
+// DropCollection removes all documents and metadata for a collection.
+func (s *Store) DropCollection(dbName, colName string) error {
+	ns := dbName + "/" + colName
+	var keys [][]byte
+	if err := s.eng.Scan(ns, func(key, _ []byte) bool {
+		keys = append(keys, append([]byte(nil), key...))
+		return true
+	}); err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if err := s.eng.Delete(ns, key); err != nil {
+			return err
+		}
+	}
+	if err := s.eng.Delete("_meta", []byte(metaCollectionPrefix+ns)); err != nil {
+		return err
+	}
+	if err := s.eng.Delete("_meta", []byte(metaSchemaPrefix+ns)); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	if db, ok := s.databases[dbName]; ok {
+		db.mu.Lock()
+		delete(db.collections, ns)
+		db.mu.Unlock()
+	}
+	s.mu.Unlock()
+	return nil
+}
+
+// DropDatabase removes all collections and metadata for a database.
+func (s *Store) DropDatabase(name string) error {
+	for _, col := range s.ListCollections(name) {
+		if err := s.DropCollection(name, col); err != nil {
+			return err
+		}
+	}
+	if err := s.eng.Delete("_meta", []byte(metaDatabasePrefix+name)); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	delete(s.databases, name)
+	s.mu.Unlock()
+	return nil
+}
+
 // ListDatabases returns the names of all known databases
 // (those that have at least one key in the engine).
 func (s *Store) ListDatabases() []string {
@@ -563,3 +718,19 @@ func (s *Store) ListCollections(dbName string) []string {
 
 // Engine exposes the underlying Engine for stats and administration.
 func (s *Store) Engine() *Engine { return s.eng }
+
+func databaseNameFromNamespace(ns string) string {
+	parts := strings.SplitN(ns, "/", 2)
+	if len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
+}
+
+func collectionNameFromNamespace(ns string) string {
+	parts := strings.SplitN(ns, "/", 2)
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	return ns
+}

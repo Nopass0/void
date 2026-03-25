@@ -26,8 +26,12 @@ curl -X POST http://host:7700/v1/auth/login \
 
 - List databases: `GET /v1/databases`
 - Create database: `POST /v1/databases` with `{ "name": "mydb" }`
+- Delete database: `DELETE /v1/databases/{db}`
 - List collections: `GET /v1/databases/{db}/collections`
 - Create collection: `POST /v1/databases/{db}/collections` with `{ "name": "users" }`
+- Delete collection: `DELETE /v1/databases/{db}/collections/{col}`
+- Get schema: `GET /v1/databases/{db}/{col}/schema`
+- Set schema: `PUT /v1/databases/{db}/{col}/schema`
 - Insert document: `POST /v1/databases/{db}/{col}`
 - Get document: `GET /v1/databases/{db}/{col}/{id}`
 - Replace document: `PUT /v1/databases/{db}/{col}/{id}`
@@ -79,6 +83,23 @@ The server expects a tree in `where`, not a flat array.
 
 - Database events: `GET /v1/databases/{db}/realtime`
 - Logs stream: `GET /v1/logs/realtime`
+
+## Schema Sync And Migrations
+
+- Pull schema from a live server: `voidcli schema pull --out void.prisma`
+- Preview schema changes: `voidcli schema push --schema void.prisma --dry-run`
+- Apply schema changes: `voidcli schema push --schema void.prisma`
+- Create and apply a migration: `voidcli migrate dev --schema void.prisma --name add_users`
+- Apply pending migrations from disk: `voidcli migrate deploy --dir void/migrations`
+- Check migration status: `voidcli migrate status --dir void/migrations`
+
+VoidDB uses a Prisma-like schema file with `datasource`, `generator` and `model` blocks.
+
+## PostgreSQL Import
+
+- Import a PostgreSQL database by URL:
+  `voidcli import postgres "postgres://user:pass@host:5432/app?sslmode=disable" --database app`
+- Use `--drop-existing` to recreate the target VoidDB database before import.
 
 ## Safe Agent Defaults
 
