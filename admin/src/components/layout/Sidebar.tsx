@@ -296,12 +296,12 @@ export function Sidebar() {
     window.location.href = "/login";
   };
 
-  const copyText = async (text: string, label: string) => {
+  const copyText = useCallback(async (text: string, label: string) => {
     await navigator.clipboard.writeText(text);
     toast.success(`${label} copied`);
-  };
+  }, []);
 
-  const handleDeleteDatabase = async (db: string) => {
+  const handleDeleteDatabase = useCallback(async (db: string) => {
     if (!window.confirm(`Delete database "${db}"?`)) {
       return;
     }
@@ -316,9 +316,9 @@ export function Sidebar() {
     } catch (err: any) {
       toast.error(err?.response?.data?.error || `Failed to delete ${db}`);
     }
-  };
+  }, [activeDb, loadDatabases, setActiveCol, setActiveDb]);
 
-  const handleDeleteCollection = async (db: string, col: string) => {
+  const handleDeleteCollection = useCallback(async (db: string, col: string) => {
     if (!window.confirm(`Delete collection "${db}/${col}"?`)) {
       return;
     }
@@ -332,29 +332,29 @@ export function Sidebar() {
     } catch (err: any) {
       toast.error(err?.response?.data?.error || `Failed to delete ${col}`);
     }
-  };
+  }, [activeCol, activeDb, loadCollections, setActiveCol]);
 
-  const handleCopyDatabaseSchema = async (db: string) => {
+  const handleCopyDatabaseSchema = useCallback(async (db: string) => {
     try {
       const schema = await api.exportDatabaseSchema(db);
       await copyText(schema, `Schema for ${db}`);
     } catch {
       toast.error("Failed to export database schema");
     }
-  };
+  }, [copyText]);
 
-  const handleCopyCollectionSchema = async (db: string, col: string) => {
+  const handleCopyCollectionSchema = useCallback(async (db: string, col: string) => {
     try {
       const schema = await api.exportCollectionSchema(db, col);
       await copyText(schema, `Schema for ${db}/${col}`);
     } catch {
       toast.error("Failed to export collection schema");
     }
-  };
+  }, [copyText]);
 
-  const openImportModal = (targetDatabase?: string | null) => {
+  const openImportModal = useCallback((targetDatabase?: string | null) => {
     setModalState({ mode: "import", targetDatabase });
-  };
+  }, []);
 
   const handleModalSuccess = async (database: string) => {
     setModalState(null);
@@ -389,7 +389,7 @@ export function Sidebar() {
       danger: true,
       onClick: () => { void handleDeleteDatabase(db); },
     },
-  ], [activeDb]);
+  ], [copyText, handleCopyDatabaseSchema, handleDeleteDatabase, openImportModal]);
 
   const collectionMenu = useCallback((db: string, col: string): ContextMenuEntry[] => [
     {
@@ -409,7 +409,7 @@ export function Sidebar() {
       danger: true,
       onClick: () => { void handleDeleteCollection(db, col); },
     },
-  ], []);
+  ], [copyText, handleCopyCollectionSchema, handleDeleteCollection]);
 
   useEffect(() => { void loadDatabases(); }, [loadDatabases]);
 
