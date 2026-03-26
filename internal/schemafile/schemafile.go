@@ -74,6 +74,7 @@ var scalarTypes = map[string]engine.FieldType{
 	"Boolean":  engine.TypeBoolean,
 	"DateTime": engine.TypeDateTime,
 	"Json":     engine.TypeObject,
+	"Blob":     engine.TypeBlob,
 	"Bytes":    engine.TypeString,
 }
 
@@ -359,21 +360,14 @@ func Diff(current, desired *Project, forceDrop bool) Plan {
 				continue
 			}
 			schema := currentModels[key].Schema.Normalize()
+			if _, ok := desiredDBs[schema.Database]; !ok {
+				continue
+			}
 			ops = append(ops, Operation{
 				Type:       OpDeleteCollection,
 				Database:   schema.Database,
 				Collection: schema.Collection,
 				Summary:    fmt.Sprintf("drop collection %s/%s", schema.Database, schema.Collection),
-			})
-		}
-		for dbName := range currentDBs {
-			if _, ok := desiredDBs[dbName]; ok {
-				continue
-			}
-			ops = append(ops, Operation{
-				Type:     OpDeleteDatabase,
-				Database: dbName,
-				Summary:  fmt.Sprintf("drop database %s", dbName),
 			})
 		}
 	}
@@ -789,6 +783,8 @@ func renderFieldLine(buf *bytes.Buffer, field engine.SchemaField) {
 			typeName = "DateTime"
 		case engine.TypeArray, engine.TypeObject:
 			typeName = "Json"
+		case engine.TypeBlob:
+			typeName = "Blob"
 		case engine.TypeRelation:
 			typeName = field.Relation.Model
 			if typeName == "" {

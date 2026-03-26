@@ -21,6 +21,7 @@ const (
 	TypeDateTime FieldType = "datetime"
 	TypeArray    FieldType = "array"
 	TypeObject   FieldType = "object"
+	TypeBlob     FieldType = "blob"
 	TypeRelation FieldType = "relation"
 )
 
@@ -250,6 +251,17 @@ func parseLiteralDefault(expr string, f SchemaField) (types.Value, error) {
 			return types.Null(), err
 		}
 		return jsonInterfaceToValue(decoded), nil
+	case TypeBlob:
+		var decoded map[string]interface{}
+		if err := json.Unmarshal([]byte(expr), &decoded); err != nil {
+			return types.Null(), err
+		}
+		bucket, _ := decoded["_blob_bucket"].(string)
+		key, _ := decoded["_blob_key"].(string)
+		if bucket == "" || key == "" {
+			return types.Null(), fmt.Errorf("blob default must contain _blob_bucket and _blob_key")
+		}
+		return types.Blob(bucket, key), nil
 	case TypeDateTime:
 		if _, err := time.Parse(time.RFC3339, expr); err != nil {
 			if _, errNano := time.Parse(time.RFC3339Nano, expr); errNano != nil {
@@ -302,6 +314,10 @@ func validateFieldValue(f SchemaField, val types.Value) error {
 	case TypeObject:
 		if val.Type() != types.TypeObject {
 			return fmt.Errorf("field %s must be object", f.Name)
+		}
+	case TypeBlob:
+		if val.Type() != types.TypeBlob {
+			return fmt.Errorf("field %s must be blob reference", f.Name)
 		}
 	case TypeRelation:
 		return nil
@@ -386,6 +402,8 @@ func prismaTypeForField(f SchemaField) string {
 		return "DateTime"
 	case TypeArray, TypeObject, TypeRelation:
 		return "Json"
+	case TypeBlob:
+		return "Blob"
 	default:
 		return "String"
 	}

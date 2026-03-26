@@ -35,9 +35,7 @@ export function QueryEditor() {
   } = useStore();
 
   const [localText, setLocalText] = useState(queryText || DEFAULT_QUERY);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [theme, setTheme] = useState<any>(undefined);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [jsonExt, setJsonExt] = useState<any[]>([]);
   const loaded = useRef(false);
 

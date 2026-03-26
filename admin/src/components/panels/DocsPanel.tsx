@@ -200,6 +200,8 @@ go build -o voiddb ./cmd/voiddb
             <EndpointRow method="PATCH" path="/v1/databases/{db}/{col}/{id}" desc="Partial update" />
             <EndpointRow method="DELETE" path="/v1/databases/{db}/{col}/{id}" desc="Delete document" />
             <EndpointRow method="POST" path="/v1/databases/{db}/{col}/query" desc="Query documents" />
+            <EndpointRow method="POST" path="/v1/databases/{db}/{col}/{id}/files/{field}" desc="Upload a file into a Blob field" />
+            <EndpointRow method="DELETE" path="/v1/databases/{db}/{col}/{id}/files/{field}" desc="Delete a Blob field file" />
           </div>
 
           <SubHeading>Engine</SubHeading>
@@ -216,6 +218,14 @@ go build -o voiddb ./cmd/voiddb
             <EndpointRow method="GET" path="/s3/{bucket}/{key}" desc="Download object" />
             <EndpointRow method="DELETE" path="/s3/{bucket}/{key}" desc="Delete object" />
           </div>
+          <CodeBlock lang="json" code={`{
+  "_blob_bucket": "media",
+  "_blob_key": "assets/123/original/photo.jpg",
+  "_blob_url": "https://db.example.com/s3/media/assets/123/original/photo.jpg"
+}`} />
+          <CodeBlock lang="bash" code={`curl -X POST ${apiUrl}/v1/databases/media/assets/123/files/original \\
+  -H 'Authorization: Bearer <token>' \\
+  -F 'file=@./photo.jpg'`} />
         </>
       ),
     },

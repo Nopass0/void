@@ -43,7 +43,7 @@ func NewRouter(
 
 	// Instantiate handlers.
 	authH := handlers.NewAuthHandler(authSvc)
-	dbH := handlers.NewDBHandler(store)
+	dbH := handlers.NewDBHandler(store, blobStore)
 	blobH := handlers.NewBlobHandler(blobStore, opts.S3Region)
 	backupH := handlers.NewBackupHandler(store, backupSvc, "1.0.0")
 	cacheH := handlers.NewCacheHandler(cache)
@@ -107,6 +107,8 @@ func NewRouter(
 	api.HandleFunc("/databases/{db}/{col}/{id}", dbH.ReplaceDocument).Methods(http.MethodPut)
 	api.HandleFunc("/databases/{db}/{col}/{id}", dbH.PatchDocument).Methods(http.MethodPatch)
 	api.HandleFunc("/databases/{db}/{col}/{id}", dbH.DeleteDocument).Methods(http.MethodDelete)
+	api.HandleFunc("/databases/{db}/{col}/{id}/files/{field}", dbH.UploadDocumentFile).Methods(http.MethodPost)
+	api.HandleFunc("/databases/{db}/{col}/{id}/files/{field}", dbH.DeleteDocumentFile).Methods(http.MethodDelete)
 
 	// Cache API.
 	api.HandleFunc("/cache/{key:.*}", cacheH.Get).Methods(http.MethodGet)

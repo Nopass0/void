@@ -33,6 +33,17 @@ export interface Document {
   [field: string]: unknown;
 }
 
+export interface BlobRef {
+  _blob_bucket: string;
+  _blob_key: string;
+  _blob_url?: string;
+  content_type?: string;
+  etag?: string;
+  size?: number;
+  last_modified?: string;
+  metadata?: Record<string, string>;
+}
+
 /** A query filter clause. */
 export interface QueryFilter {
   field: string;
@@ -89,7 +100,7 @@ export interface EngineStats {
 /** Collection Schema Definitions */
 export interface SchemaField {
   name: string;
-  type: "string" | "number" | "boolean" | "datetime" | "array" | "object" | "relation";
+  type: "string" | "number" | "boolean" | "datetime" | "array" | "object" | "blob" | "relation";
   required?: boolean;
   default?: string;
   default_expr?: string;
@@ -420,6 +431,41 @@ export async function queryDocuments(
 export async function countDocuments(db: string, col: string): Promise<number> {
   const res = await http.get<{ count: number }>(`/v1/databases/${db}/${col}/count`);
   return res.data.count;
+}
+
+export async function uploadDocumentFile(
+  db: string,
+  col: string,
+  id: string,
+  field: string,
+  file: File,
+  options?: { bucket?: string; key?: string; metadata?: Record<string, string> }
+): Promise<{ field: string; blob: BlobRef }> {
+  const form = new FormData();
+  form.append("file", file);
+  for (const [key, value] of Object.entries(options?.metadata ?? {})) {
+    form.append(`meta_${key}`, value);
+  }
+  const res = await http.post<{ field: string; blob: BlobRef }>(
+    `/v1/databases/${encodeURIComponent(db)}/${encodeURIComponent(col)}/${encodeURIComponent(id)}/files/${encodeURIComponent(field)}`,
+    form,
+    {
+      params: {
+        bucket: options?.bucket,
+        key: options?.key,
+      },
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    }
+  );
+  return res.data;
+}
+
+export async function deleteDocumentFile(db: string, col: string, id: string, field: string): Promise<void> {
+  await http.delete(
+    `/v1/databases/${encodeURIComponent(db)}/${encodeURIComponent(col)}/${encodeURIComponent(id)}/files/${encodeURIComponent(field)}`
+  );
 }
 
 // ── Engine Stats ──────────────────────────────────────────────────────────────

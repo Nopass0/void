@@ -36,7 +36,7 @@ import * as api from "@/lib/api";
 import type { Document } from "@/lib/api";
 import { ContextMenu, type ContextMenuEntry } from "@/components/ui/context-menu";
 
-type EditableKind = "readonly" | "text" | "number" | "boolean" | "datetime" | "json";
+type EditableKind = "readonly" | "text" | "number" | "boolean" | "datetime" | "json" | "blob";
 type DraftMap = Record<string, Record<string, unknown>>;
 
 interface DocumentTableProps {
@@ -79,6 +79,8 @@ function fieldIcon(kind: EditableKind) {
       return <CalendarDays className="w-3 h-3" />;
     case "json":
       return <Braces className="w-3 h-3" />;
+    case "blob":
+      return <ExternalLink className="w-3 h-3" />;
     default:
       return <Type className="w-3 h-3" />;
   }
@@ -114,6 +116,7 @@ function fieldForColumn(field: string, schema: api.Schema | null): api.SchemaFie
 function editorKind(field: string, schemaField: api.SchemaField | undefined, value: unknown): EditableKind {
   if (field === "_id") return "readonly";
   const type = schemaField?.type;
+  if (type === "blob") return "blob";
   if (type === "number" || typeof value === "number") return "number";
   if (type === "boolean" || typeof value === "boolean") return "boolean";
   if (type === "datetime") return "datetime";
@@ -175,9 +178,35 @@ function serializeValue(value: unknown): string {
   }
 }
 
+function isBlobRef(value: unknown): value is api.BlobRef {
+  return !!value && typeof value === "object" && "_blob_bucket" in value && "_blob_key" in value;
+}
+
 function CellValue({ value }: { value: unknown }) {
   if (value === null || value === undefined) {
     return <span className="text-muted-foreground italic text-xs">null</span>;
+  }
+  if (isBlobRef(value)) {
+    const label = value._blob_key || `${value._blob_bucket}`;
+    return (
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="block truncate text-xs font-mono text-cyan-400" title={label}>
+          {truncate(label, 48)}
+        </span>
+        {value._blob_url && (
+          <a
+            href={value._blob_url}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 text-neon-500 hover:text-neon-400"
+            onClick={(event) => event.stopPropagation()}
+            title="Open file"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        )}
+      </div>
+    );
   }
   if (typeof value === "boolean") {
     return (
@@ -325,6 +354,12 @@ function InlineCell({
   const beginEdit = (event: React.MouseEvent) => {
     event.stopPropagation();
     if (kind === "readonly") return;
+    if (kind === "blob") {
+      if (isBlobRef(value) && value._blob_url) {
+        window.open(value._blob_url, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
     if (kind === "json") {
       onOpenJsonEditor();
       return;
@@ -417,7 +452,7 @@ function InlineCell({
       onClick={beginEdit}
       className={cn(
         "group flex w-full min-w-0 items-center justify-between gap-2 rounded-md px-1 py-0.5 text-left transition-colors",
-        kind !== "readonly" && "hover:bg-surface-3/80",
+        kind !== "readonly" && kind !== "blob" && "hover:bg-surface-3/80",
         dirty && "bg-neon-500/10"
       )}
     >
@@ -638,7 +673,7 @@ export function DocumentTable({ onEditDoc, refreshToken = 0 }: DocumentTableProp
   const handleAddColumn = () => {
     const name = window.prompt("Column name");
     if (!name || !activeDb || !activeCol || !activeSchema) return;
-    const type = window.prompt("Type (string, number, boolean, datetime, object, array)", "string") as api.SchemaField["type"] | null;
+    const type = window.prompt("Type (string, number, boolean, datetime, object, array, blob)", "string") as api.SchemaField["type"] | null;
     if (!type) return;
     const nextSchema: api.Schema = {
       ...activeSchema,

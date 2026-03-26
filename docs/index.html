@@ -156,7 +156,7 @@
     <div class="card"><div class="card-icon">🔐</div><h3>TLS / Let's Encrypt</h3><p>Automatic HTTPS via ACME HTTP-01, bring-your-own certs (including wildcards), HTTP→HTTPS redirect.</p></div>
     <div class="card"><div class="card-icon">💾</div><h3>Backup &amp; Restore</h3><p>Export to native <code>.void</code> archives (tar+gzip+NDJSON). Scheduled backups via cron or Task Scheduler.</p></div>
     <div class="card"><div class="card-icon">🔧</div><h3>CLI Tool</h3><p><code>voidcli</code> — manage databases, collections, and documents from the terminal.</p></div>
-    <div class="card"><div class="card-icon">📦</div><h3>ORM Libraries</h3><p>Type-safe clients for TypeScript (<code>@voiddb/orm</code>) and Go (<code>github.com/voiddb/void/orm/go</code>).</p></div>
+    <div class="card"><div class="card-icon">📦</div><h3>ORM Libraries</h3><p>Type-safe clients for TypeScript (<code>@voiddb/orm</code>) and Go, shipped as separate companion repositories.</p></div>
   </div>
 </section>
 
@@ -294,6 +294,18 @@ docker compose up -d
     <tr><td>DELETE</td><td>/s3/:bucket/:key</td><td>Delete object</td></tr>
   </table></div>
 
+  <h3 style="margin-top:1.5rem">Blob Fields In Documents</h3>
+<pre><code>{
+  <span class="str">"_blob_bucket"</span>: <span class="str">"media"</span>,
+  <span class="str">"_blob_key"</span>: <span class="str">"assets/123/original/photo.jpg"</span>,
+  <span class="str">"_blob_url"</span>: <span class="str">"https://db.example.com/s3/media/assets/123/original/photo.jpg"</span>
+}</code></pre>
+  <div class="table-wrap"><table>
+    <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+    <tr><td>POST</td><td>/v1/databases/:db/:col/:id/files/:field</td><td>Upload a file and store a Blob ref in the document field</td></tr>
+    <tr><td>DELETE</td><td>/v1/databases/:db/:col/:id/files/:field</td><td>Remove the file field and delete the stored object</td></tr>
+  </table></div>
+
   <h3 style="margin-top:1.5rem">Backup API</h3>
   <div class="table-wrap"><table>
     <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
@@ -388,7 +400,7 @@ docker compose up -d
   </div>
 
   <div id="orm-go" class="tab-content">
-    <p>Install: <code>go get github.com/voiddb/void/orm/go</code></p>
+    <p>Repository: <a href="https://github.com/Nopass0/void_go" target="_blank">Nopass0/void_go</a></p>
 <pre><code><span class="kw">import</span> voidorm <span class="str">"github.com/voiddb/void/orm/go"</span>
 
 client, _ := voidorm.<span class="fn">New</span>(voidorm.<span class="type">Config</span>{
@@ -441,13 +453,14 @@ col.<span class="fn">Delete</span>(id)</code></pre>
 </div><!-- /container -->
 
 <footer>
-  <p>VoidDB &copy; 2024 &nbsp;&bull;&nbsp; MIT License &nbsp;&bull;&nbsp;
+  <p>VoidDB &copy; <span id="current-year"></span> &nbsp;&bull;&nbsp; MIT License &nbsp;&bull;&nbsp;
   <a href="https://github.com/Nopass0/void">GitHub</a> &nbsp;&bull;&nbsp;
   <a href="https://github.com/Nopass0/void_ts">TypeScript ORM</a> &nbsp;&bull;&nbsp;
-  <a href="https://github.com/Nopass0/void/tree/main/orm/go">Go SDK</a></p>
+  <a href="https://github.com/Nopass0/void_go">Go SDK</a></p>
 </footer>
 
 <script>
+document.getElementById('current-year').textContent = new Date().getFullYear();
 function showTab(group, id) {
   document.querySelectorAll('[id^="' + group + '-"]').forEach(el => el.classList.remove('active'));
   document.getElementById(group + '-' + id).classList.add('active');

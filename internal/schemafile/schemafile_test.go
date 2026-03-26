@@ -123,3 +123,86 @@ func TestDiffCreatesDatabaseCollectionAndSchema(t *testing.T) {
 		t.Fatalf("expected third op set schema, got %s", plan.Operations[2].Type)
 	}
 }
+
+func TestDiffForceDropScopesToExplicitDatabases(t *testing.T) {
+	current := &Project{
+		Models: []Model{
+			{
+				Name: "Users",
+				Schema: &engine.Schema{
+					Database:   "lowkey",
+					Collection: "users",
+					Model:      "Users",
+					Fields: []engine.SchemaField{
+						{Name: "id", Type: engine.TypeString, Required: true, IsID: true, MappedName: "_id", PrismaType: "String"},
+					},
+				},
+			},
+			{
+				Name: "Posts",
+				Schema: &engine.Schema{
+					Database:   "other",
+					Collection: "posts",
+					Model:      "Posts",
+					Fields: []engine.SchemaField{
+						{Name: "id", Type: engine.TypeString, Required: true, IsID: true, MappedName: "_id", PrismaType: "String"},
+					},
+				},
+			},
+		},
+	}
+	desired := &Project{
+		Models: []Model{
+			{
+				Name: "Users",
+				Schema: &engine.Schema{
+					Database:   "lowkey",
+					Collection: "users",
+					Model:      "Users",
+					Fields: []engine.SchemaField{
+						{Name: "id", Type: engine.TypeString, Required: true, IsID: true, MappedName: "_id", PrismaType: "String"},
+					},
+				},
+			},
+		},
+	}
+
+	plan := Diff(current, desired, true)
+	for _, op := range plan.Operations {
+		if op.Database != "" && op.Database != "lowkey" {
+			t.Fatalf("expected force drop to stay within explicit databases, got %#v", op)
+		}
+		if op.Type == OpDeleteDatabase {
+			t.Fatalf("expected no delete_database ops, got %#v", op)
+		}
+	}
+}
+
+func TestParseAndRenderBlobField(t *testing.T) {
+	src := `
+model Asset {
+  id   String @id @default(uuid()) @map("_id")
+  file Blob
+  @@database("app")
+  @@map("assets")
+}
+`
+
+	project, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(project.Models) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(project.Models))
+	}
+
+	field := project.Models[0].Schema.Fields[1]
+	if field.Type != engine.TypeBlob {
+		t.Fatalf("expected blob field type, got %q", field.Type)
+	}
+
+	rendered := Render(project)
+	if !strings.Contains(rendered, "file Blob") {
+		t.Fatalf("expected rendered blob field, got:\n%s", rendered)
+	}
+}

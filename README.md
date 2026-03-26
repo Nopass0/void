@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://nopass0.github.io/void/">Docs</a> |
   <a href="https://github.com/Nopass0/void_ts">TypeScript ORM</a> |
-  <a href="https://github.com/Nopass0/void/tree/main/orm/go">Go SDK</a> |
+  <a href="https://github.com/Nopass0/void_go">Go SDK</a> |
   <a href="./SKILL.md">AI Agent Guide</a>
 </p>
 
@@ -22,12 +22,12 @@ You get a document database, S3-style blob storage, an in-memory cache, backups,
 Highlights:
 
 - Fast custom LSM storage engine written in Go
-- Document API with schemas, indexes, relations, realtime updates, and imports
-- S3-compatible blob storage with buckets and objects
+- Document API with schemas, indexes, relations, realtime updates, imports, and typed blob fields
+- S3-compatible blob storage with buckets, objects, and direct document-field uploads
 - Built-in cache API for sessions, hot keys, and ephemeral state
 - Admin console for data, users, logs, backups, query editing, and imports
 - Prisma-like schema pull/push and migration workflow via `voidcli`
-- Companion ORMs for TypeScript and Go
+- Companion ORM repositories for TypeScript and Go
 
 ## Install Locally
 
@@ -124,6 +124,7 @@ curl -X POST http://localhost:7700/v1/databases/app/users \
 ## Schema Sync And Migrations
 
 VoidDB supports Prisma-like schema files and CLI workflows for pull, push, diff, and migrations.
+Schema sync only mutates databases explicitly present in the schema file. Databases not declared there are left untouched.
 
 ```prisma
 datasource db {
@@ -169,6 +170,48 @@ voidcli import postgres "postgresql://user:pass@host:5432/app?sslmode=require" \
 
 The admin console also supports importing a new database directly from a PostgreSQL connection string.
 
+## Blob Fields And File Upload API
+
+VoidDB supports `Blob` as a schema field type. A blob field stores an S3-compatible object reference in the document,
+while the actual file contents live in the built-in blob store.
+
+```prisma
+model Asset {
+  id        String   @id @default(uuid()) @map("_id")
+  title     String
+  original  Blob?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@database("media")
+  @@map("assets")
+}
+```
+
+Read responses include blob metadata like:
+
+```json
+{
+  "_blob_bucket": "media",
+  "_blob_key": "assets/123/original/photo.jpg",
+  "_blob_url": "https://db.example.com/s3/media/assets/123/original/photo.jpg"
+}
+```
+
+You can still write blob references manually through the document API, but the easier path is the direct upload endpoint:
+
+```bash
+curl -X POST "http://localhost:7700/v1/databases/media/assets/123/files/original" \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@./photo.jpg"
+```
+
+Optional query params:
+
+- `bucket` to override the default bucket (defaults to the database name)
+- `key` to override the generated object key
+
+The upload response returns the stored blob reference plus a direct `_blob_url`.
+
 ## Official Client Ecosystem
 
 ### TypeScript ORM
@@ -193,7 +236,7 @@ const adults = await users.find(
 
 ### Go SDK
 
-Package path: [github.com/voiddb/void/orm/go](https://github.com/Nopass0/void/tree/main/orm/go)
+Repository: [Nopass0/void_go](https://github.com/Nopass0/void_go)
 
 ```go
 client, _ := voidorm.New(voidorm.Config{
@@ -245,7 +288,7 @@ Repository copy: [SKILL.md](./SKILL.md)
 - Main docs site: [nopass0.github.io/void](https://nopass0.github.io/void/)
 - TypeScript ORM docs: [nopass0.github.io/void_ts](https://nopass0.github.io/void_ts/)
 - TypeScript ORM repo: [Nopass0/void_ts](https://github.com/Nopass0/void_ts)
-- Go SDK source: [orm/go](https://github.com/Nopass0/void/tree/main/orm/go)
+- Go SDK repo: [Nopass0/void_go](https://github.com/Nopass0/void_go)
 
 ## Repository Layout
 
@@ -256,8 +299,6 @@ void/
 |-- cmd/                voiddb and voidcli binaries
 |-- docs/               GitHub Pages documentation
 |-- internal/           Engine, API, auth, blob, cache, import, backup
-|-- orm/go/             Go SDK
-|-- orm/typescript/     TypeScript ORM
 |-- scripts/            Local run, setup, backup, deploy helpers
 |-- config.yaml         Default server configuration
 `-- docker-compose.yml  Local stack

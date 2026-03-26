@@ -20,11 +20,17 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"mime"
 	"net/http"
+	"path"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/voiddb/void/internal/blob"
 	"github.com/voiddb/void/internal/engine"
 	"github.com/voiddb/void/internal/engine/types"
 	"github.com/voiddb/void/internal/schemafile"
@@ -33,12 +39,13 @@ import (
 
 // DBHandler handles all document-store HTTP requests.
 type DBHandler struct {
-	store *engine.Store
+	store     *engine.Store
+	blobStore *blob.Store
 }
 
 // NewDBHandler creates a DBHandler backed by store.
-func NewDBHandler(store *engine.Store) *DBHandler {
-	return &DBHandler{store: store}
+func NewDBHandler(store *engine.Store, blobStore *blob.Store) *DBHandler {
+	return &DBHandler{store: store, blobStore: blobStore}
 }
 
 // --- Database endpoints ------------------------------------------------------
@@ -291,7 +298,7 @@ func (h *DBHandler) GetDocument(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, docToMap(doc))
+	writeJSON(w, http.StatusOK, docToMap(r, doc))
 }
 
 // ReplaceDocument handles PUT /v1/databases/{db}/{col}/{id}.
@@ -350,7 +357,7 @@ func (h *DBHandler) PatchDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	zap.L().Info("document patched", zap.String("database", mux.Vars(r)["db"]), zap.String("collection", mux.Vars(r)["col"]), zap.String("id", id))
-	writeJSON(w, http.StatusOK, docToMap(existing))
+	writeJSON(w, http.StatusOK, docToMap(r, existing))
 }
 
 // DeleteDocument handles DELETE /v1/databases/{db}/{col}/{id}.
@@ -362,6 +369,127 @@ func (h *DBHandler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	zap.L().Info("document deleted", zap.String("database", mux.Vars(r)["db"]), zap.String("collection", mux.Vars(r)["col"]), zap.String("id", id))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UploadDocumentFile uploads a file into blob storage and stores a blob reference in the document field.
+func (h *DBHandler) UploadDocumentFile(w http.ResponseWriter, r *http.Request) {
+	if h.blobStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "blob storage is not configured")
+		return
+	}
+
+	vars := mux.Vars(r)
+	dbName, colName, id, field := vars["db"], vars["col"], vars["id"], vars["field"]
+	if dbName == "" || colName == "" || id == "" || field == "" {
+		writeError(w, http.StatusBadRequest, "database, collection, id, and field are required")
+		return
+	}
+
+	col := h.collection(r)
+	doc, err := col.FindByID(id)
+	if err == engine.ErrNotFound {
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	reader, filename, contentType, userMeta, err := parseUploadPayload(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	defer reader.Close()
+
+	bucket := safeBucketName(r.URL.Query().Get("bucket"))
+	if bucket == "" {
+		bucket = safeBucketName(dbName)
+	}
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+	if key == "" {
+		key = buildDocumentBlobKey(colName, id, field, filename)
+	}
+
+	meta, err := h.blobStore.PutObject(bucket, key, contentType, reader, userMeta)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	doc.Fields[field] = types.Blob(bucket, key)
+	if err := col.Update(id, doc); err != nil {
+		_ = h.blobStore.DeleteObject(bucket, key)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	zap.L().Info("document file uploaded",
+		zap.String("database", dbName),
+		zap.String("collection", colName),
+		zap.String("id", id),
+		zap.String("field", field),
+		zap.String("bucket", bucket),
+		zap.String("key", key),
+	)
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"field": field,
+		"blob":  blobRefPayload(r, meta),
+	})
+}
+
+// DeleteDocumentFile removes a blob-backed field and deletes the underlying object.
+func (h *DBHandler) DeleteDocumentFile(w http.ResponseWriter, r *http.Request) {
+	if h.blobStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "blob storage is not configured")
+		return
+	}
+
+	vars := mux.Vars(r)
+	id, field := vars["id"], vars["field"]
+	col := h.collection(r)
+	doc, err := col.FindByID(id)
+	if err == engine.ErrNotFound {
+		writeError(w, http.StatusNotFound, "document not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	value := doc.Get(field)
+	if value.IsNull() {
+		writeError(w, http.StatusNotFound, "file field not found")
+		return
+	}
+	if value.Type() != types.TypeBlob {
+		writeError(w, http.StatusBadRequest, "field is not a blob reference")
+		return
+	}
+
+	bucket, key := value.BlobRef()
+	delete(doc.Fields, field)
+	if err := col.Update(id, doc); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := h.blobStore.DeleteObject(bucket, key); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	zap.L().Info("document file deleted",
+		zap.String("database", vars["db"]),
+		zap.String("collection", vars["col"]),
+		zap.String("id", id),
+		zap.String("field", field),
+		zap.String("bucket", bucket),
+		zap.String("key", key),
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -422,7 +550,7 @@ func (h *DBHandler) QueryDocuments(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]map[string]interface{}, len(docs))
 	for i, d := range docs {
-		out[i] = docToMap(d)
+		out[i] = docToMap(r, d)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"results": out,
@@ -515,21 +643,23 @@ func parseQueryNode(node querySpecNode) engine.Predicate {
 	return p
 }
 
+var nonSafeFilename = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+
 // docToMap converts a Document to a JSON-serialisable map including the _id.
-func docToMap(doc *types.Document) map[string]interface{} {
+func docToMap(r *http.Request, doc *types.Document) map[string]interface{} {
 	m := make(map[string]interface{}, len(doc.Fields)+1)
 	m["_id"] = doc.ID
 	for k, v := range doc.Fields {
 		if k == "_id" {
 			continue
 		}
-		m[k] = valueToJSON(v)
+		m[k] = valueToJSON(r, v)
 	}
 	return m
 }
 
 // valueToJSON converts a types.Value to a JSON-friendly Go value.
-func valueToJSON(v types.Value) interface{} {
+func valueToJSON(r *http.Request, v types.Value) interface{} {
 	switch v.Type() {
 	case types.TypeNull:
 		return nil
@@ -543,21 +673,140 @@ func valueToJSON(v types.Value) interface{} {
 		arr := v.ArrayVal()
 		out := make([]interface{}, len(arr))
 		for i, item := range arr {
-			out[i] = valueToJSON(item)
+			out[i] = valueToJSON(r, item)
 		}
 		return out
 	case types.TypeObject:
 		obj := v.ObjectVal()
 		out := make(map[string]interface{}, len(obj))
 		for k, val := range obj {
-			out[k] = valueToJSON(val)
+			out[k] = valueToJSON(r, val)
 		}
 		return out
 	case types.TypeBlob:
 		bucket, key := v.BlobRef()
-		return map[string]string{"_blob_bucket": bucket, "_blob_key": key}
+		return map[string]string{
+			"_blob_bucket": bucket,
+			"_blob_key":    key,
+			"_blob_url":    blobObjectURL(r, bucket, key),
+		}
 	}
 	return nil
+}
+
+func blobRefPayload(r *http.Request, meta *blob.ObjectMeta) map[string]interface{} {
+	return map[string]interface{}{
+		"_blob_bucket":  meta.Bucket,
+		"_blob_key":     meta.Key,
+		"_blob_url":     blobObjectURL(r, meta.Bucket, meta.Key),
+		"content_type":  meta.ContentType,
+		"etag":          meta.ETag,
+		"size":          meta.Size,
+		"last_modified": meta.LastModified.UTC().Format(time.RFC3339),
+		"metadata":      meta.Metadata,
+	}
+}
+
+func blobObjectURL(r *http.Request, bucket, key string) string {
+	if r == nil {
+		return "/s3/" + bucket + "/" + key
+	}
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	host := r.Host
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); forwarded != "" {
+		host = forwarded
+	}
+	encodedKey := strings.Join(strings.FieldsFunc(key, func(r rune) bool { return r == '/' }), "/")
+	parts := strings.Split(encodedKey, "/")
+	for i := range parts {
+		parts[i] = pathSegmentForBlob(parts[i])
+	}
+	return fmt.Sprintf("%s://%s/s3/%s/%s", scheme, host, pathSegmentForBlob(bucket), strings.Join(parts, "/"))
+}
+
+func parseUploadPayload(r *http.Request) (readCloser io.ReadCloser, filename string, contentType string, userMeta map[string]string, err error) {
+	userMeta = make(map[string]string)
+	if mediaType, _, parseErr := mime.ParseMediaType(r.Header.Get("Content-Type")); parseErr == nil && strings.HasPrefix(mediaType, "multipart/") {
+		file, header, formErr := r.FormFile("file")
+		if formErr != nil {
+			err = fmt.Errorf("multipart upload requires form field \"file\"")
+			return
+		}
+		filename = header.Filename
+		contentType = header.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		for k, v := range r.MultipartForm.Value {
+			if strings.HasPrefix(strings.ToLower(k), "meta_") && len(v) > 0 {
+				userMeta[strings.TrimPrefix(strings.ToLower(k), "meta_")] = v[0]
+			}
+		}
+		readCloser = file
+		return
+	}
+
+	filename = strings.TrimSpace(r.URL.Query().Get("filename"))
+	if filename == "" {
+		filename = strings.TrimSpace(r.Header.Get("X-File-Name"))
+	}
+	if filename == "" {
+		filename = "upload.bin"
+	}
+	contentType = strings.TrimSpace(r.Header.Get("Content-Type"))
+	if contentType == "" || contentType == "application/json" {
+		contentType = "application/octet-stream"
+	}
+	for k, v := range r.Header {
+		lower := strings.ToLower(k)
+		if strings.HasPrefix(lower, "x-blob-meta-") && len(v) > 0 {
+			userMeta[strings.TrimPrefix(lower, "x-blob-meta-")] = v[0]
+		}
+	}
+	readCloser = r.Body
+	return
+}
+
+func buildDocumentBlobKey(collection, id, field, filename string) string {
+	filename = safeFilename(filename)
+	if filename == "" {
+		filename = "upload.bin"
+	}
+	return path.Join(collection, id, field, filename)
+}
+
+func safeBucketName(name string) string {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return ""
+	}
+	name = strings.ReplaceAll(name, "_", "-")
+	name = nonSafeFilename.ReplaceAllString(name, "-")
+	name = strings.Trim(name, "-")
+	if name == "" {
+		return "voiddb"
+	}
+	return name
+}
+
+func safeFilename(name string) string {
+	name = strings.TrimSpace(path.Base(strings.ReplaceAll(name, "\\", "/")))
+	name = nonSafeFilename.ReplaceAllString(name, "-")
+	name = strings.Trim(name, "-.")
+	return name
+}
+
+func pathSegmentForBlob(value string) string {
+	replacer := strings.NewReplacer(
+		"%", "%25",
+		" ", "%20",
+		"#", "%23",
+		"?", "%3F",
+	)
+	return replacer.Replace(value)
 }
 
 func defaultModelNameForExport(dbName, colName string) string {
